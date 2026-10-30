@@ -7,11 +7,24 @@ stream melange to an agent while it thinks, messages fly by ornithopter, and eve
 beside its agent's sietch. Sandworms pass. A Coriolis storm rises when the calls keep failing. A day lasts 8 minutes,
 and at night the cave mouths glow and the Fremen's eyes shine blue.
 
+![The demo desert: Odrade's order at work around the Arrakeen Citadel, with the Chronicle beside it](docs/desert.webp)
+
 Name your agents after the people of the books, and they arrive as themselves. A session titled
 `Duncan Idaho: pilothouse CI fixes` is a swordmaster of House Atreides with a blade at his side; `Odrade: …` is
 Mother Superior of the Bene Gesserit, in black with a crown of office; `Sheeana: …` is the worm-rider, carrying her
 maker hook, and leaves rings in the sand where she walks. Any other name becomes a Fremen of the deep desert, with a
 cloak dyed from their name.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/sietch.webp" alt="Duncan Idaho's sietch, with the works his tasks raised and a fedaykin's stilltent" /><br /><sub>Duncan's sietch: each task a work, his fedaykin in a stilltent</sub></td>
+<td width="50%"><img src="docs/dossier.webp" alt="Odrade's dossier: Mother Superior of the Bene Gesserit" /><br /><sub>A dossier: Odrade, Mother Superior</sub></td>
+</tr>
+<tr>
+<td><img src="docs/shai-hulud.webp" alt="Shai-Hulud rises beside the Arrakeen Citadel" /><br /><sub>Shai-Hulud rises to honour a great work</sub></td>
+<td><img src="docs/night.webp" alt="The desert at night: glowing cave mouths and moonlight" /><br /><sub>Night of two moons</sub></td>
+</tr>
+</table>
 
 It is inspired by, and its server half forked from,
 [Agent Civilization](https://github.com/TannerMidd/pi-pocket-agent-civilization) by Tanner Middleton (MIT). The
@@ -32,7 +45,7 @@ extensions/
     index.js  world.js  model.js  cast.js  places.js  demo.js  sound.js  style.css
 ```
 
-Do not copy `test/`, `dev/`, `package.json`, or `_pocket.d.ts`.
+Do not copy `test/`, `dev/`, `docs/`, `package.json`, or `_pocket.d.ts`.
 
 ## Use
 

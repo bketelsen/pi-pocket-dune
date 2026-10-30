@@ -19,7 +19,16 @@ const pocket = {
     openConversation: (id) => console.log("open", id),
     api: async (path) => {
         if (path === "world") {
-            return { boot: "preview", batch: 0, now: Date.now(), convs: {}, res: {}, humans: {}, events: [], unknown: [] };
+            return {
+                boot: "preview",
+                batch: 0,
+                now: Date.now(),
+                convs: {},
+                res: {},
+                humans: {},
+                events: [],
+                unknown: [],
+            };
         }
 
         throw Object.assign(new Error("no server"), { status: 404 });
@@ -41,6 +50,16 @@ const pocket = {
         document.head.append(link);
     },
     onDispose: () => {},
+};
+
+// For scripted screenshots: the live world, on `window.__dune`.
+const { World } = await import("../dune/world.js");
+const start = World.prototype.start;
+
+World.prototype.start = function () {
+    window.__dune = this;
+
+    return start.call(this);
 };
 
 const module = await import("../dune/index.js");
