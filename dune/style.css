@@ -1,0 +1,705 @@
+/* Arrakis: the Imperium's instruments over the desert. Dark glass, wide capitals, and the colour of spice. */
+
+.ext-page-body:has(> .dune-root) {
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+}
+
+.dune-root {
+    --dune-ink: #1c0e06;
+    --dune-glass: rgba(24, 13, 7, 0.82);
+    --dune-glass2: rgba(40, 22, 11, 0.9);
+    --dune-edge: rgba(255, 196, 120, 0.22);
+    --dune-sand: #f3e2b5;
+    --dune-spice: #ff8a2a;
+    --dune-blue: #4fb2ff;
+    --dune-title:
+        "Josefin Sans", "Futura", "Century Gothic", "Avenir Next", "Trebuchet MS", system-ui,
+        sans-serif;
+    --dune-body: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    position: relative;
+    flex: 1;
+    height: 100%;
+    min-height: 420px;
+    overflow: hidden;
+    background: #c98e55;
+    color: var(--dune-sand);
+    font-family: var(--dune-body);
+    font-size: 14px;
+    line-height: 1.4;
+    isolation: isolate;
+}
+
+.dune-stage {
+    position: absolute;
+    inset: 0;
+}
+
+.dune-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: grab;
+}
+
+/* ——— the status bar ——— */
+
+.dune-hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 18px;
+    padding: 8px 14px;
+    background: linear-gradient(180deg, var(--dune-glass2), var(--dune-glass));
+    border: 1px solid var(--dune-edge);
+    border-radius: 4px;
+    box-shadow: 0 8px 30px rgba(40, 15, 0, 0.35);
+    backdrop-filter: blur(6px);
+    z-index: 2;
+}
+
+.dune-with-log .dune-hud {
+    right: 352px;
+}
+
+.dune-brand {
+    display: flex;
+    flex-direction: column;
+    line-height: 1;
+}
+
+.dune-title {
+    font-family: var(--dune-title);
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: 0.55em;
+    color: #ffe2b0;
+    text-shadow: 0 0 18px rgba(255, 138, 42, 0.45);
+}
+
+.dune-sub {
+    margin-top: 4px;
+    font-family: var(--dune-title);
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: rgba(243, 226, 181, 0.65);
+}
+
+.dune-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+}
+
+.dune-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 54px;
+}
+
+.dune-stat b {
+    font-family: var(--dune-title);
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff3dc;
+}
+
+.dune-stat span {
+    font-family: var(--dune-title);
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(243, 226, 181, 0.6);
+}
+
+.dune-storm b {
+    color: var(--dune-spice);
+    animation: dune-pulse 1s infinite alternate;
+}
+
+.dune-tools-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.dune-btn {
+    appearance: none;
+    padding: 6px 11px;
+    background: rgba(255, 196, 120, 0.06);
+    border: 1px solid var(--dune-edge);
+    border-radius: 3px;
+    color: var(--dune-sand);
+    font-family: var(--dune-title);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition:
+        background 0.15s,
+        border-color 0.15s;
+}
+
+.dune-btn:hover {
+    background: rgba(255, 138, 42, 0.18);
+    border-color: rgba(255, 170, 90, 0.6);
+}
+
+.dune-btn:focus-visible {
+    outline: 2px solid var(--dune-blue);
+    outline-offset: 1px;
+}
+
+.dune-btn.dune-on {
+    background: rgba(255, 138, 42, 0.32);
+    border-color: var(--dune-spice);
+    color: #fff3dc;
+}
+
+.dune-wide {
+    width: 100%;
+    margin-top: 12px;
+    padding: 9px;
+}
+
+.dune-danger {
+    margin-top: 10px;
+    border-color: rgba(255, 90, 60, 0.5);
+    color: #ffb4a0;
+}
+
+/* ——— windows ——— */
+
+.dune-win {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, var(--dune-glass2), rgba(18, 9, 4, 0.92));
+    border: 1px solid var(--dune-edge);
+    border-radius: 4px;
+    box-shadow: 0 12px 40px rgba(30, 10, 0, 0.5);
+    backdrop-filter: blur(8px);
+    z-index: 3;
+    animation: dune-rise 0.25s ease-out;
+}
+
+.dune-win-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--dune-edge);
+}
+
+.dune-win-head h3 {
+    margin: 0;
+    font-family: var(--dune-title);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #ffe2b0;
+}
+
+.dune-kicker {
+    margin-bottom: 4px;
+    font-family: var(--dune-title);
+    font-size: 10px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--dune-spice);
+}
+
+.dune-x {
+    appearance: none;
+    background: none;
+    border: none;
+    color: var(--dune-sand);
+    font-size: 16px;
+    cursor: pointer;
+    opacity: 0.7;
+}
+
+.dune-x:hover {
+    opacity: 1;
+}
+
+.dune-win-body {
+    padding: 12px 16px 16px;
+    overflow: auto;
+}
+
+.dune-win-body h4 {
+    margin: 16px 0 6px;
+    font-family: var(--dune-title);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: rgba(243, 226, 181, 0.7);
+}
+
+.dune-sheet {
+    left: 10px;
+    bottom: 10px;
+    width: min(380px, calc(100% - 20px));
+    max-height: calc(100% - 110px);
+}
+
+.dune-manual {
+    left: 50%;
+    top: 50%;
+    width: min(720px, calc(100% - 20px));
+    max-height: calc(100% - 40px);
+    transform: translate(-50%, -50%);
+    animation: none;
+}
+
+.dune-hero {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    padding: 10px;
+    margin-bottom: 10px;
+    background: radial-gradient(
+        circle at 15% 50%,
+        color-mix(in srgb, var(--accent) 22%, transparent),
+        transparent 60%
+    );
+    border-left: 2px solid var(--accent);
+}
+
+.dune-portrait {
+    flex: none;
+    image-rendering: auto;
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5));
+}
+
+.dune-line {
+    margin: 0 0 6px;
+    font-style: italic;
+    color: #f8ecd0;
+}
+
+.dune-doing {
+    margin: 0;
+    font-size: 13px;
+}
+
+.dune-live {
+    color: var(--dune-spice);
+    animation: dune-pulse 0.9s infinite alternate;
+}
+
+.dune-muted {
+    color: rgba(243, 226, 181, 0.55);
+}
+
+.dune-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 3px 14px;
+    margin: 0;
+    font-size: 13px;
+}
+
+.dune-facts dt {
+    font-family: var(--dune-title);
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(243, 226, 181, 0.55);
+    padding-top: 2px;
+}
+
+.dune-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.dune-win a {
+    color: #8fd0ff;
+    cursor: pointer;
+    text-decoration: none;
+    border-bottom: 1px dotted rgba(143, 208, 255, 0.5);
+}
+
+.dune-tools {
+    display: grid;
+    gap: 4px;
+}
+
+.dune-tool {
+    display: grid;
+    grid-template-columns: 96px 1fr 30px;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.dune-tool span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dune-tool b {
+    text-align: right;
+    font-weight: 500;
+}
+
+.dune-bar {
+    height: 5px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.dune-bar i {
+    display: block;
+    height: 100%;
+}
+
+.dune-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 13px;
+}
+
+.dune-list li {
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255, 196, 120, 0.07);
+}
+
+.dune-list .dune-muted {
+    margin-left: 6px;
+    font-size: 12px;
+}
+
+.dune-mono {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    overflow-wrap: anywhere;
+}
+
+.dune-bad {
+    color: #ff9c8a;
+}
+
+.dune-parts,
+.dune-factions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.dune-part {
+    padding: 2px 8px;
+    border: 1px solid var(--c);
+    border-radius: 10px;
+    font-size: 12px;
+    color: var(--c);
+}
+
+.dune-faction {
+    padding: 3px 9px;
+    background: var(--robe);
+    border-left: 3px solid var(--trim);
+    font-family: var(--dune-title);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+}
+
+.dune-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.dune-table th {
+    width: 38%;
+    padding: 5px 10px 5px 0;
+    text-align: left;
+    vertical-align: top;
+    font-family: var(--dune-title);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: #ffd9a0;
+}
+
+.dune-table td {
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 196, 120, 0.08);
+}
+
+/* ——— the Chronicle ——— */
+
+.dune-log {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: 330px;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, var(--dune-glass2), var(--dune-glass));
+    border: 1px solid var(--dune-edge);
+    border-radius: 4px;
+    backdrop-filter: blur(6px);
+    z-index: 2;
+}
+
+.dune-log h3 {
+    margin: 0;
+    padding: 14px 16px 10px;
+    font-family: var(--dune-title);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    color: #ffe2b0;
+    border-bottom: 1px solid var(--dune-edge);
+}
+
+.dune-log > p {
+    padding: 0 16px;
+}
+
+.dune-log ol {
+    flex: 1;
+    margin: 0;
+    padding: 6px 0;
+    list-style: none;
+    overflow: auto;
+}
+
+.dune-entry {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 2px 8px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    cursor: pointer;
+    animation: dune-rise 0.3s ease-out;
+}
+
+.dune-entry:hover {
+    background: rgba(255, 138, 42, 0.1);
+}
+
+.dune-entry i {
+    font-style: normal;
+    color: var(--dune-spice);
+    text-align: center;
+}
+
+.dune-entry time {
+    grid-column: 2;
+    font-size: 10px;
+    color: rgba(243, 226, 181, 0.45);
+}
+
+.dune-skull i,
+.dune-skull span {
+    color: #ff9c8a;
+}
+
+.dune-worm i {
+    color: var(--dune-blue);
+}
+
+.dune-tower i {
+    color: #ffd166;
+}
+
+.dune-storm i {
+    color: #ffb06a;
+}
+
+/* ——— splash and notices ——— */
+
+.dune-splash {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: radial-gradient(ellipse at 50% 60%, rgba(120, 50, 10, 0.75), rgba(12, 5, 2, 0.96));
+    z-index: 10;
+    cursor: pointer;
+    animation: dune-fade 2.6s ease-in forwards;
+}
+
+.dune-splash-title {
+    font-family: var(--dune-title);
+    font-weight: 300;
+    font-size: clamp(36px, 9vw, 92px);
+    letter-spacing: 0.7em;
+    margin-right: -0.7em;
+    color: #ffe2b0;
+    text-shadow: 0 0 40px rgba(255, 138, 42, 0.6);
+    animation: dune-spread 2.6s ease-out;
+}
+
+.dune-splash-rule {
+    width: min(360px, 60%);
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--dune-spice), transparent);
+}
+
+.dune-splash-saying {
+    font-family: var(--dune-title);
+    font-size: 13px;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(243, 226, 181, 0.8);
+    text-align: center;
+    padding: 0 20px;
+}
+
+.dune-loading,
+.dune-error {
+    position: absolute;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    background: var(--dune-glass);
+    border: 1px solid var(--dune-edge);
+    border-radius: 3px;
+    font-family: var(--dune-title);
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    z-index: 4;
+}
+
+.dune-error {
+    border-color: rgba(255, 90, 60, 0.6);
+    color: #ffb4a0;
+}
+
+@keyframes dune-rise {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+}
+
+.dune-manual {
+    animation: none;
+}
+
+@keyframes dune-pulse {
+    to {
+        opacity: 0.35;
+    }
+}
+
+@keyframes dune-fade {
+    0%,
+    70% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+
+@keyframes dune-spread {
+    from {
+        letter-spacing: 0.2em;
+        margin-right: -0.2em;
+        opacity: 0;
+    }
+}
+
+/* ——— narrow screens ——— */
+
+@media (max-width: 899px) {
+    .dune-with-log .dune-hud {
+        right: 10px;
+    }
+
+    .dune-hud {
+        gap: 6px 10px;
+        padding: 6px 10px;
+    }
+
+    .dune-title {
+        font-size: 15px;
+    }
+
+    .dune-stat {
+        min-width: 44px;
+    }
+
+    .dune-stat b {
+        font-size: 13px;
+    }
+
+    .dune-tools-bar {
+        margin-left: 0;
+        gap: 4px;
+    }
+
+    .dune-sub {
+        display: none;
+    }
+
+    .dune-stats {
+        display: grid;
+        grid-template-columns: repeat(6, auto);
+        gap: 2px 8px;
+    }
+
+    .dune-stat span {
+        font-size: 7px;
+        letter-spacing: 0.08em;
+    }
+
+    .dune-btn {
+        padding: 4px 7px;
+        font-size: 9.5px;
+        letter-spacing: 0.08em;
+    }
+
+    .dune-log {
+        top: auto;
+        left: 10px;
+        height: 40%;
+        width: auto;
+    }
+
+    .dune-sheet {
+        max-height: 60%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dune-root *,
+    .dune-splash {
+        animation: none !important;
+    }
+
+    .dune-splash {
+        display: none;
+    }
+}

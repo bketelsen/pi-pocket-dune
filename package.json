@@ -1,0 +1,26 @@
+{
+    "name": "pi-pocket-dune",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "Every agent at work as Arrakis, for Pi Pocket: sietches, spice fields, ornithopters, and sandworms.",
+    "license": "MIT",
+    "author": "Brian Ketelsen",
+    "engines": {
+        "node": ">=22.19"
+    },
+    "scripts": {
+        "check": "tsc --noEmit -p tsconfig.json && for f in dune/*.js; do node --check \"$f\" || exit 1; done",
+        "test": "node --test test/*.test.ts",
+        "preview": "python3 -m http.server 8765 --bind 127.0.0.1",
+        "format:check": "prettier --check --tab-width 4 --print-width 100 dune.ts dune/*.js dune/style.css test/*.ts README.md package.json"
+    },
+    "peerDependencies": {
+        "@earendil-works/pi-durable": "^1.3.0"
+    },
+    "devDependencies": {
+        "@types/node": "^26.6.5",
+        "prettier": "^3.8.0",
+        "typescript": "^6.0.3"
+    }
+}

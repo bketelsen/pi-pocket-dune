@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Arrakis preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script type="importmap">
+{ "imports": {
+    "preact": "../node_modules/preact/dist/preact.mjs",
+    "preact/hooks": "../node_modules/preact/hooks/dist/hooks.mjs",
+    "htm": "../node_modules/htm/dist/htm.module.js"
+} }
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #111; }
+  .ext-page-body { position: fixed; inset: 0; display: flex; }
+</style>
+</head>
+<body>
+<div class="ext-page-body" id="page"></div>
+<script type="module" src="./pocket-shim.js"></script>
+</body>
+</html>
