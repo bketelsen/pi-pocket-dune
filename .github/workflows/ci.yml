@@ -1,0 +1,49 @@
+# The checks use Pi Pocket's packages, as the README's "Develop" section says: node_modules is a link to a Pi Pocket
+# checkout's. Here we clone the public Pi Pocket repository at tag v0.27.0 (the release the team's server runs) into
+# the runner's temporary folder, install its dependencies, and link them.
+name: CI
+
+on:
+    pull_request:
+    push:
+        branches: [main]
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ci-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    check:
+        name: Check
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - name: Check out this repository
+              uses: actions/checkout@v4
+
+            - name: Set up Node.js 24
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+
+            - name: Clone Pi Pocket v0.27.0
+              run: git clone --depth 1 --branch v0.27.0 https://github.com/TannerMidd/pi-pocket.git "$RUNNER_TEMP/pi-pocket"
+
+            - name: Install Pi Pocket dependencies
+              working-directory: ${{ runner.temp }}/pi-pocket
+              run: npm ci
+
+            - name: Link node_modules to the Pi Pocket checkout
+              run: ln -s "$RUNNER_TEMP/pi-pocket/node_modules" node_modules
+
+            - name: Type check and syntax check
+              run: npm run check
+
+            - name: Tests
+              run: npm test
+
+            - name: Formatting
+              run: npm run format:check

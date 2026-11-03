@@ -134,6 +134,71 @@ export function fmt(n) {
     return String(Math.round(value));
 }
 
+/**
+ * The sessions the desert shows: those active in the last `ms`, every ancestor of them (a subagent stands beside
+ * its master's sietch), and `keep` with its ancestors (the session the owner looks at, while it is quiet).
+ * The order is the order of `convs`.
+ */
+export function recentIds(convs, now, ms, keep = []) {
+    const all = convs ?? {};
+    const since = now - ms;
+    const shown = new Set();
+
+    const addLine = (id) => {
+        let at = id;
+
+        // A session and its ancestors: 16 steps up is the deepest the desert draws.
+        for (let depth = 0; depth <= 16; depth++) {
+            if (!all[at] || shown.has(at)) {
+                return;
+            }
+
+            shown.add(at);
+            at = all[at].parent;
+        }
+    };
+
+    for (const id of Object.keys(all)) {
+        if ((all[id]?.last ?? 0) >= since) {
+            addLine(id);
+        }
+    }
+
+    for (const id of keep) {
+        addLine(id);
+    }
+
+    return Object.keys(all).filter((id) => shown.has(id));
+}
+
+/**
+ * The night the desert replays, in local time: 20:00 to now (from today), or to 07:00 this morning when the day
+ * has started (from yesterday).
+ */
+export function nightWindow(now) {
+    const hour = new Date(now).getHours();
+    const from = new Date(now);
+
+    from.setHours(20, 0, 0, 0);
+
+    if (hour >= 20) {
+        return { from: from.getTime(), to: now };
+    }
+
+    // Before 20:00, the night began yesterday evening.
+    from.setDate(from.getDate() - 1);
+
+    if (hour < 7) {
+        return { from: from.getTime(), to: now };
+    }
+
+    const to = new Date(now);
+
+    to.setHours(7, 0, 0, 0);
+
+    return { from: from.getTime(), to: to.getTime() };
+}
+
 /** Money as Solaris: the same dollars, in the Imperium's coin. */
 export function solaris(cost) {
     const value = Number(cost) || 0;

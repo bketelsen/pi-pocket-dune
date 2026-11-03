@@ -9,8 +9,9 @@
  * distrans and ornithopter; the night shift and the desk send word from their own stations. Hooks watch each model
  * request and tool call in every session; the browser module draws them.
  *
- * What it keeps: the last events and some counts, in memory and in `<data>/dune/world.json`. Only the owner can open
- * it, and it shows them only sessions that Pi Pocket confirms they may see (so never another person's PiP), or
+ * What it keeps: the last events and some counts, in memory and in `<data>/dune/world.json`, and a compact 24-hour
+ * history in `<data>/dune/history.json` that a page replays, so the night can be watched again. Only the owner can
+ * open it, and it shows them only sessions that Pi Pocket confirms they may see (so never another person's PiP), or
  * subagents that a confirmed session's own tool call started. Tool arguments and messages are cut short and likely
  * secrets are masked, but they can still hold what a command or a path said. For a session not yet confirmed, the file
  * keeps only counts and tool and model names: no words, paths, titles, or names. The page learns the ids of such
@@ -45,6 +46,32 @@ const SAVED_SEEN = 2000;
 const MAX_PENDING = 200;
 /** Events waiting to go to the pages, at most; past it the pages load the world again instead. */
 const MAX_OUTBOX = 3000;
+/**
+ * How long a session counts as active: the page shows a session, and the sietches it hangs from, only when something
+ * happened in it in the last 12 hours.
+ */
+const ACTIVE_MS = 12 * 60 * 60_000;
+/** How far back the history reaches: the night and the day around it, from 20:00 to 07:00 and past it. */
+const HISTORY_MS = 24 * 60 * 60_000;
+/** The event kinds the history keeps: what a replay draws. A thought or an answer is not among them. */
+const HISTORY_KINDS = new Set(["tool", "done", "msg", "link", "idle"]);
+/** How many events the history keeps, in memory and in its file. */
+const HISTORY_MAX = 40_000;
+/** The most bytes the history file may take. */
+const HISTORY_BYTES = 4_000_000;
+/** How long a change to the history waits before its file is written: the file is big, and a night is not urgent. */
+const HISTORY_SAVE_MS = 60_000;
+/** How many call keys the history keeps: the full `taskId:callId` is long, so an event keeps a number instead. */
+const HISTORY_CALLS = 5000;
+/**
+ * Tool calls the history keeps per minute, on average. A busy night has more than any file can hold, so its calls
+ * are sampled: an even sample across the whole night, and every call of a quiet night.
+ */
+const HISTORY_RATE = 10;
+/** The bucket's size: a short burst of tool calls all keep, and a long one is sampled. */
+const HISTORY_BURST = 60;
+/** How many conversations may wait for their turn's first call to be kept; past it the oldest goes. */
+const HISTORY_FRESH = 2000;
 /**
  * Event fields that the file keeps for a session not yet confirmed: none can hold what someone wrote, a path, a
  * title, or a name. `s` keeps only its kind (`mcp`, not `mcp:server`); `from` and `to` lose a person's name.
@@ -164,6 +191,38 @@ interface Human {
 }
 
 type Ev = { id: number; at: number; k: string } & Record<string, unknown>;
+
+/** A conversation as the history keeps it: only what names it after its world record is gone. */
+interface HConv {
+    id: string;
+    kind: Kind;
+    parent?: string;
+    name?: string;
+    title?: string;
+    persona?: string;
+    provider?: string;
+    model?: string;
+    first: number;
+    last: number;
+    /** Confirmed when it was recorded: its events stay readable after it is gone. */
+    ok?: boolean;
+}
+
+/** The compact 24-hour history: what a page replays, its byte sizes, the conversations it names, and its call keys. */
+interface History {
+    events: Ev[];
+    sizes: number[];
+    convs: Record<string, HConv>;
+    /** A tool event's full `taskId:callId` to the id of the event that started it: the file keeps the number. */
+    calls: Map<string, number>;
+    dirty: boolean;
+    /** Tool calls the bucket still pays for, refilled at `HISTORY_RATE` a minute. In memory only, never saved. */
+    tokens: number;
+    /** When the bucket was last refilled. */
+    filled: number;
+    /** Conversations whose next tool call is kept, whatever the bucket says: the first call of a turn. */
+    fresh: Set<string>;
+}
 
 interface World {
     seq: number;
@@ -451,6 +510,8 @@ interface Shared {
     held: Map<string, (() => void)[]>;
     pending: Pending[];
     seen: Set<string>;
+    /** The compact 24-hour history, in its own file. A version loaded after an older one starts without it. */
+    history?: History;
     /** The one chain of saves, for every version: a later save never lands before an earlier one. */
     saving: Promise<void>;
     /** Goes up at each reset, so work that started before it does not bring old things back. */
@@ -507,13 +568,181 @@ async function load(file: string): Promise<World> {
     }
 }
 
+/** The history in its file, or an empty one. A bad file, or none, gives an empty history; old events are dropped. */
+async function loadHistory(file: string): Promise<History> {
+    const empty: History = {
+        events: [],
+        sizes: [],
+        convs: dict(),
+        calls: new Map(),
+        dirty: false,
+        tokens: HISTORY_BURST,
+        filled: Date.now(),
+        fresh: new Set(),
+    };
+
+    try {
+        const saved = JSON.parse(await readFile(file, "utf8")) as {
+            v?: unknown;
+            convs?: unknown;
+            events?: unknown;
+        };
+
+        if (!saved || typeof saved !== "object" || !Array.isArray(saved.events)) {
+            return empty;
+        }
+
+        const since = Date.now() - HISTORY_MS;
+        const convs = dict<HConv>(saved.convs);
+
+        for (const [key, each] of Object.entries(convs)) {
+            if (each === null || typeof each !== "object" || typeof each.id !== "string") {
+                delete convs[key];
+            }
+        }
+
+        const events = saved.events
+            .filter(
+                (event: unknown): event is Ev =>
+                    event !== null &&
+                    typeof event === "object" &&
+                    typeof (event as Ev).at === "number" &&
+                    (event as Ev).at >= since,
+            )
+            .slice(-HISTORY_MAX);
+
+        return {
+            events,
+            sizes: events.map((event) => Buffer.byteLength(JSON.stringify(event))),
+            convs,
+            calls: new Map(),
+            dirty: false,
+            // The sampling starts full, as a module that just loaded does: a fresh night keeps its first calls.
+            tokens: HISTORY_BURST,
+            filled: Date.now(),
+            fresh: new Set(),
+        };
+    } catch {
+        // No history yet: it starts empty.
+        return empty;
+    }
+}
+
+/**
+ * An event as the history keeps it: only the short fields a replay draws, no error text, and a call as the id of the
+ * tool event that made it. `calls` holds the full `taskId:callId` keys, which the file and memory leave out otherwise.
+ * A field with no value stays out.
+ */
+function compact(event: Ev, calls: Map<string, number>): Ev | undefined {
+    const out = { id: event.id, at: event.at, k: event.k } as Ev;
+    const put = (field: string, value: unknown) => {
+        if (value !== undefined) {
+            out[field] = value;
+        }
+    };
+    const short = (value: unknown, max: number) =>
+        typeof value === "string" || typeof value === "number" ? clip(value, max) : undefined;
+    const call = (value: unknown) => (typeof value === "string" ? calls.get(value) : undefined);
+
+    switch (event.k) {
+        case "tool":
+            put("c", event.c);
+
+            if (typeof event.call === "string") {
+                calls.set(event.call, event.id);
+
+                // A Map keeps its order: the oldest key goes first, and its events keep a number only.
+                while (calls.size > HISTORY_CALLS) {
+                    const oldest = calls.keys().next();
+
+                    if (oldest.done === true) {
+                        break;
+                    }
+
+                    calls.delete(oldest.value);
+                }
+
+                put("call", event.id);
+            }
+
+            put("n", event.n);
+            put("s", event.s);
+            put("i", short(event.i, 48));
+            put("l", short(event.l, 60));
+            put("w", event.w);
+            put("par", call(event.par));
+            put("a", event.a);
+            put("tn", short(event.tn, 40));
+            break;
+        case "done": {
+            const done = call(event.call);
+
+            // Its tool was sampled out: the result goes too, so a replay never shows a result without its call.
+            if (done === undefined) {
+                return undefined;
+            }
+
+            put("c", event.c);
+            put("call", done);
+
+            if (typeof event.call === "string") {
+                calls.delete(event.call);
+            }
+
+            put("n", event.n);
+            put("ok", event.ok);
+            break;
+        }
+        case "msg":
+            put("from", event.from);
+            put("to", event.to);
+            put("via", event.via);
+            put("text", short(event.text, 80));
+            put("call", call(event.call));
+            break;
+        case "link":
+            put("c", event.c);
+            put("p", event.p);
+            put("kind", event.kind);
+            put("name", short(event.name, 40));
+            break;
+        case "idle":
+            put("c", event.c);
+            break;
+        default:
+            return undefined;
+    }
+
+    return out;
+}
+
+/**
+ * How many of the oldest events to drop so the rest fit in `budget` bytes: the newest stay. A budget too small for
+ * anything drops them all.
+ */
+export function capHistory(sizes: number[], budget: number): number {
+    let total = 0;
+
+    for (let index = sizes.length - 1; index >= 0; index--) {
+        total += sizes[index]!;
+
+        if (total > budget) {
+            return index + 1;
+        }
+    }
+
+    return 0;
+}
+
 export default async function createDune(host: Host, web: Web) {
     const folder = join(host.dataDir, "dune");
     const file = join(folder, "world.json");
+    const historyFile = join(folder, "history.json");
     // One state for every version of this module in this process: an edit hands it on whole.
     const shared = (globalThis as Record<symbol, unknown>)[STATE] as Shared | undefined;
     const state: Shared = shared ?? {
         world: await load(file),
+        history: await loadHistory(historyFile),
         verified: new Set<string>(),
         held: new Map(),
         pending: [],
@@ -536,7 +765,13 @@ export default async function createDune(host: Host, web: Web) {
         (globalThis as Record<symbol, unknown>)[STATE] = state;
     }
 
+    // A version of this module loaded after an older one is handed a state made without a history: it loads it now.
+    const history = (state.history ??= await loadHistory(historyFile));
+
     const { world, verified, held, pending, seen } = state;
+
+    // A world file lost or older than the history must not give a new event the id of a kept one.
+    world.seq = Math.max(world.seq, Number(history.events.at(-1)?.id) || 0);
     // Tabs reload the world when this changes: a restart or a reset can make ids go back.
     const boot = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     // Events of a conversation shown just now, from before it was, wait in `out.late`: the page puts them in
@@ -545,6 +780,7 @@ export default async function createDune(host: Host, web: Web) {
     const { changed, unknown } = out;
     let flushTimer: NodeJS.Timeout | undefined;
     let saveTimer: NodeJS.Timeout | undefined;
+    let historyTimer: NodeJS.Timeout | undefined;
     let saves = 0;
     let disposed = false;
 
@@ -681,6 +917,234 @@ export default async function createDune(host: Host, web: Web) {
                 await rename(temporary, file);
             } catch (error) {
                 console.warn("dune: could not save its world:", error);
+            }
+        });
+
+        return state.saving;
+    }
+
+    // ——— the history a page replays ———
+
+    /** The conversations an event names. */
+    function named(event: Ev): string[] {
+        return [event.c, event.p, event.from, event.to].filter(isConv);
+    }
+
+    /** Whether the history may keep a conversation's words: the owner sees it now, or did when it was recorded. */
+    function hOk(id: string): boolean {
+        return isOk(id) || history.convs[safeKey(id)]?.ok === true;
+    }
+
+    /** Whether the history may show an event: every conversation it names passes `hOk`. */
+    function hEventOk(event: Ev): boolean {
+        return named(event).every((id) => hOk(id));
+    }
+
+    /** Keep what names a conversation later, taken from the world as it is now. */
+    function remember(id: string) {
+        const found = world.convs[id];
+
+        // Gone from the world: the old record stays, and keeps whatever it already says.
+        if (found === undefined) {
+            return;
+        }
+
+        const old = history.convs[safeKey(id)];
+
+        history.convs[safeKey(id)] = {
+            id,
+            kind: found.kind,
+            ...(found.parent !== undefined ? { parent: found.parent } : {}),
+            ...(found.name !== undefined ? { name: found.name } : {}),
+            ...(found.title !== undefined ? { title: found.title } : {}),
+            ...(found.persona !== undefined ? { persona: found.persona } : {}),
+            ...(found.provider !== undefined ? { provider: found.provider } : {}),
+            ...(found.model !== undefined ? { model: found.model } : {}),
+            first: found.first,
+            last: found.last,
+            ok: isOk(id) || old?.ok === true,
+        };
+    }
+
+    /** The next tool call of a conversation is kept, whatever the bucket says. */
+    function freshen(id: string) {
+        history.fresh.delete(id);
+        history.fresh.add(id);
+
+        // A Set keeps its order: past the bound, the oldest conversation goes.
+        while (history.fresh.size > HISTORY_FRESH) {
+            const oldest = history.fresh.keys().next();
+
+            if (oldest.done === true) {
+                break;
+            }
+
+            history.fresh.delete(oldest.value);
+        }
+    }
+
+    /**
+     * Whether a tool call is kept: the first of a turn, which costs no token, or one the bucket has room for. The
+     * bucket refills at `HISTORY_RATE` a minute, so a busy night keeps an even sample across the whole night, not
+     * only its first hours, and a quiet night keeps every call.
+     */
+    function sample(event: Ev, now: number): boolean {
+        history.tokens = Math.min(
+            HISTORY_BURST,
+            history.tokens + ((now - history.filled) * HISTORY_RATE) / 60_000,
+        );
+        history.filled = now;
+
+        if (typeof event.c === "string" && history.fresh.delete(event.c)) {
+            return true;
+        }
+
+        if (history.tokens < 1) {
+            return false;
+        }
+
+        history.tokens -= 1;
+
+        return true;
+    }
+
+    /**
+     * Put an event into the history, name the conversations it holds, and drop the oldest at the front. Tool calls
+     * are sampled, so a full night still fits: a busy night keeps an even sample of them, and a quiet one keeps all.
+     */
+    function keep(event: Ev) {
+        if (!HISTORY_KINDS.has(event.k)) {
+            return;
+        }
+
+        const now = Date.now();
+
+        // A message or a finish starts a turn: its first tool call is always kept, so a work still rises for it.
+        if (event.k === "msg" && isConv(event.to)) {
+            freshen(event.to);
+        } else if (event.k === "idle" && isConv(event.c)) {
+            freshen(event.c);
+        }
+
+        // Sampled out: the event stays out of the history, and its call key stays out of `calls`.
+        if (event.k === "tool" && !sample(event, now)) {
+            return;
+        }
+
+        const short = compact(event, history.calls);
+
+        if (short === undefined) {
+            return;
+        }
+
+        history.events.push(short);
+        history.sizes.push(Buffer.byteLength(JSON.stringify(short)));
+        history.dirty = true;
+
+        for (const id of named(event)) {
+            remember(id);
+        }
+
+        historyTimer ??= setTimeout(saveHistory, HISTORY_SAVE_MS);
+
+        // One splice: what the window has left behind, then what is past the limit.
+        const since = Date.now() - HISTORY_MS;
+        let drop = 0;
+
+        while (drop < history.events.length && history.events[drop]!.at < since) {
+            drop++;
+        }
+
+        drop = Math.max(drop, history.events.length - HISTORY_MAX);
+
+        if (drop > 0) {
+            history.events.splice(0, drop);
+            history.sizes.splice(0, drop);
+        }
+    }
+
+    /**
+     * Write the history, in the same chain as the world's saves: a later save never lands before an earlier one. It
+     * writes only when something changed, or after a reset, which saves the empty history.
+     */
+    function saveHistory(): Promise<void> {
+        historyTimer = undefined;
+
+        if (!history.dirty) {
+            return state.saving;
+        }
+
+        state.saving = state.saving.then(async () => {
+            history.dirty = false;
+
+            const since = Date.now() - HISTORY_MS;
+            let drop = 0;
+
+            while (drop < history.events.length && history.events[drop]!.at < since) {
+                drop++;
+            }
+
+            if (drop > 0) {
+                history.events.splice(0, drop);
+                history.sizes.splice(0, drop);
+            }
+
+            // Every record from the world as it is now, then only those an event still names, with their sietches.
+            for (const each of Object.values(history.convs)) {
+                remember(each.id);
+            }
+
+            const keepIds = new Set<string>();
+
+            for (const event of history.events) {
+                for (const id of named(event)) {
+                    let at: string | undefined = id;
+
+                    for (let depth = 0; at !== undefined && depth < 16; depth++) {
+                        keepIds.add(safeKey(at));
+                        at = world.convs[at]?.parent ?? history.convs[safeKey(at)]?.parent;
+                    }
+                }
+            }
+
+            const convs = dict<HConv>();
+
+            for (const key of keepIds) {
+                const each = history.convs[key];
+
+                if (each === undefined) {
+                    continue;
+                }
+
+                // A session not yet confirmed keeps no title, name, or persona, as in the world's file.
+                convs[key] =
+                    each.ok === true
+                        ? each
+                        : { ...each, title: undefined, name: undefined, persona: undefined };
+            }
+
+            // The file's size: what names the conversations, then the newest events that still fit.
+            const room = HISTORY_BYTES - Buffer.byteLength(JSON.stringify(convs));
+            const cut = capHistory(history.sizes, room);
+
+            if (cut > 0) {
+                history.events.splice(0, cut);
+                history.sizes.splice(0, cut);
+            }
+
+            const data = {
+                v: 1,
+                convs,
+                events: history.events.map((event) => (hEventOk(event) ? event : bare(event))),
+            };
+            const temporary = `${historyFile}.${process.pid}.${boot}.${++saves}.tmp`;
+
+            try {
+                await mkdir(folder, { recursive: true, mode: 0o700 });
+                await writeFile(temporary, JSON.stringify(data), { mode: 0o600 });
+                await rename(temporary, historyFile);
+            } catch (error) {
+                console.warn("dune: could not save its history:", error);
             }
         });
 
@@ -834,6 +1298,7 @@ export default async function createDune(host: Host, web: Web) {
         }
 
         out.outbox.push(event);
+        keep(event);
 
         // Far behind (a burst faster than the pages take): drop the queue and skip a batch number. Each page
         // sees the gap and loads the whole world again, which is cheaper than all of it in parts.
@@ -848,7 +1313,11 @@ export default async function createDune(host: Host, web: Web) {
         return event;
     }
 
-    function conv(id: string): Conv {
+    /**
+     * A conversation. `touch` is false for a question that only asks about one (`meta`): a page that asks again every
+     * few minutes must not keep an old session active. A conversation seen first is always new now.
+     */
+    function conv(id: string, touch = true): Conv {
         let found = world.convs[id];
 
         if (found === undefined) {
@@ -873,7 +1342,10 @@ export default async function createDune(host: Host, web: Web) {
             });
         }
 
-        found.last = Date.now();
+        if (touch) {
+            found.last = Date.now();
+        }
+
         changed.convs.add(id);
         noteSeen(id);
 
@@ -1529,31 +2001,138 @@ export default async function createDune(host: Host, web: Web) {
         },
     });
 
-    /** What the owner may see of the world: their conversations, and events of only those. */
+    /**
+     * What the owner may see of the world: the conversations active in the last 12 hours, the sietches they hang from,
+     * and events of only those.
+     */
     function visible() {
         const convs = dict<Conv>();
+        const now = Date.now();
+        const since = now - ACTIVE_MS;
+        const show = new Set<string>();
 
         for (const [id, each] of Object.entries(world.convs)) {
-            if (isOk(id)) {
-                convs[id] = each;
+            if (isOk(id) && each.last >= since) {
+                show.add(id);
             }
+        }
+
+        // An ancestor shows too, so an active subagent or linked session still hangs from its sietch.
+        for (const id of [...show]) {
+            let at = world.convs[id]?.parent;
+
+            for (let depth = 0; at !== undefined && depth < 16; depth++) {
+                if (isOk(at)) {
+                    show.add(at);
+                }
+
+                at = world.convs[at]?.parent;
+            }
+        }
+
+        for (const id of show) {
+            convs[id] = world.convs[id]!;
         }
 
         return {
             boot,
             // The last batch this already holds: a page takes later ones, and loads again if one goes missing.
             batch: state.batch,
-            now: Date.now(),
+            now,
+            // How long a session counts as active, so the page can say why a sietch is not there.
+            active: ACTIVE_MS,
             convs,
             res: world.res,
             humans: world.humans,
             events: world.events.filter(evOk).slice(-SNAPSHOT_EVENTS),
-            unknown: Object.keys(world.convs).filter((id) => !isOk(id)),
+            unknown: Object.keys(world.convs).filter(
+                (id) => !isOk(id) && (world.convs[id]?.last ?? 0) >= since,
+            ),
         };
     }
 
     // The world as it is now, for a page that opens; then the page listens to "batch".
     web.route("GET", "world", () => visible());
+
+    // The night as it was: the compact events in a window, and the conversations they name, for a page that replays
+    // it. A conversation the owner may no longer see keeps only what it was: its events go, and its words with them.
+    web.route("GET", "history", (request) => {
+        const now = Date.now();
+        const span = (text: string | null, fallback: number): number => {
+            if (text === null || text.trim() === "") {
+                return fallback;
+            }
+
+            const value = Number(text);
+
+            return Number.isFinite(value) ? value : fallback;
+        };
+        const from = span(request.query.get("from"), now - HISTORY_MS);
+        const to = span(request.query.get("to"), now);
+        const events = history.events.filter(
+            (event) => event.at >= from && event.at <= to && hEventOk(event),
+        );
+        const convs = dict<Conv>();
+        const shown = new Set<string>();
+
+        const show = (id: string) => {
+            if (shown.has(id) || !hOk(id)) {
+                return;
+            }
+
+            shown.add(id);
+
+            const here = world.convs[id];
+            const kept = history.convs[safeKey(id)];
+
+            if (here !== undefined && isOk(id)) {
+                convs[id] = here;
+
+                return;
+            }
+
+            if (kept === undefined) {
+                return;
+            }
+
+            // Only what names it, and no counts: the page draws the session as it was.
+            convs[id] = {
+                id,
+                kind: kept.kind,
+                ...(kept.parent !== undefined ? { parent: kept.parent } : {}),
+                ...(kept.name !== undefined ? { name: kept.name } : {}),
+                ...(kept.title !== undefined ? { title: kept.title } : {}),
+                ...(kept.persona !== undefined ? { persona: kept.persona } : {}),
+                ...(kept.provider !== undefined ? { provider: kept.provider } : {}),
+                ...(kept.model !== undefined ? { model: kept.model } : {}),
+                first: kept.first,
+                last: kept.last,
+                tin: 0,
+                tout: 0,
+                cost: 0,
+                calls: 0,
+                turns: 0,
+                errors: 0,
+                tools: dict(),
+                files: dict(),
+            };
+        };
+
+        for (const event of events) {
+            for (const id of named(event)) {
+                show(id);
+
+                let at = world.convs[id]?.parent ?? history.convs[safeKey(id)]?.parent;
+
+                for (let depth = 0; at !== undefined && depth < 16; depth++) {
+                    show(at);
+                    at = world.convs[at]?.parent ?? history.convs[safeKey(at)]?.parent;
+                }
+            }
+        }
+
+        return { from, to, now, convs, events };
+    });
 
     /**
      * Who the team extension says a session is, read as the owner's own request: the persona's name, or undefined
@@ -1613,7 +2192,8 @@ export default async function createDune(host: Host, web: Web) {
 
             const id = String(request.conversation.id);
             const wasOk = isOk(id);
-            const here = conv(id);
+            // No touch: asking again about an old session must not make it look active.
+            const here = conv(id, false);
 
             verified.add(id);
             here.title = request.conversation.title || here.title;
@@ -1676,12 +2256,19 @@ export default async function createDune(host: Host, web: Web) {
     );
 
     // Forget what it saw.
-    web.route("POST", "reset", () => {
+    web.route("POST", "reset", async () => {
         state.generation++;
         world.convs = dict();
         world.res = dict();
         world.humans = dict();
         world.events = [];
+        history.events = [];
+        history.sizes = [];
+        history.convs = dict();
+        history.calls.clear();
+        history.tokens = HISTORY_BURST;
+        history.filled = Date.now();
+        history.fresh.clear();
         pending.length = 0;
         held.clear();
         seen.clear();
@@ -1696,6 +2283,11 @@ export default async function createDune(host: Host, web: Web) {
         schedule();
         web.send("reset", { boot });
 
+        // The history's file holds nothing either: it is written empty, not left behind.
+        clearTimeout(historyTimer);
+        history.dirty = true;
+        await saveHistory();
+
         return { ok: true };
     });
 
@@ -1705,7 +2297,9 @@ export default async function createDune(host: Host, web: Web) {
         disposed = true;
         clearTimeout(flushTimer);
         clearTimeout(saveTimer);
+        clearTimeout(historyTimer);
         await save();
+        await saveHistory();
     });
 
     return defineExtension({ name: "dune", hooks: [tools, generation] });

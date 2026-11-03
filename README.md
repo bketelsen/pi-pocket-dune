@@ -53,6 +53,8 @@ Open **Arrakis** in the rail (or "Open Arrakis" in the launcher, Ctrl+K / ⌘K).
 the **Demo**: Odrade's order at work (Teg on the fleet, Duncan on CI, Moneo on the NAS, and the rest), which gives way
 as soon as a real agent appears. Press **Demo** to see it again at any time.
 
+- **Only the last 12 hours:** the desert shows the sessions with activity in the last 12 hours, and the sessions they
+  came from. A session that goes quiet leaves the map; it comes back when it works again.
 - **This sietch / All Arrakis:** the session you came from with its family, or every session you can see.
 - **See all:** the whole desert in view. Drag to pan; scroll or pinch to zoom.
 - **Tap anyone** for their dossier: their title, faction, and a line of their own; what they do now; their spice
@@ -60,8 +62,10 @@ as soon as a real agent appears. Press **Demo** to see it again at any time.
   the works they raised, their fedaykin and allies, and the scrolls (files) they touched.
 - **Tap a place** for who comes there and what they sought. **Tap a work** for its story: what was asked and by whom,
   who built it, how long it took, its parts, and each call that built it.
-- **Replay:** the day again as a time-lapse. **☾☀:** follow the day, or keep it day or night. **♪:** the sound of the
-  desert (a drone and the wind, made in the browser). **Chronicle:** the log. **Glossary:** the manual.
+- **Replay:** the day again as a time-lapse. **Night:** the last night again, from 20:00 to 07:00, in about 3
+  minutes and under the two moons, from the 24-hour history (before 07:00, the night so far). **☾☀:** follow the
+  day, or keep it day or night. **♪:** the sound of the desert (a drone and the wind, made in the browser).
+  **Chronicle:** the log. **Glossary:** the manual.
 
 ### What you see
 
@@ -121,9 +125,12 @@ The same as Agent Civilization, whose server half this is:
   confirms the owner may see (through its `conversationRoute`), or subagents that such a session's own tool call
   started.
 - **Keeps** the last 3000 events and some counts in memory, and saves the last 1500 every few seconds to
-  `<data folder>/dune/world.json` (file mode 0600). For a session not yet confirmed, the file keeps no words, paths,
-  titles, or names. **Glossary → Forget all history** clears it all. After you uninstall it, delete the `dune` folder
-  in the data folder too.
+  `<data folder>/dune/world.json` (file mode 0600). It also keeps a compact history of the last 24 hours, for the
+  Night replay: only the tool calls and their results, messages, links, and the ends of turns, with labels cut to 60
+  characters and messages to 80, no error text, no thoughts, and no answers. It keeps at most 40,000 such events, and
+  saves them once a minute to `<data folder>/dune/history.json` (file mode 0600, 4 MB at most: the oldest go first).
+  For a session not yet confirmed, both files keep no words, paths, titles, or names. **Glossary → Forget all
+  history** clears it all. After you uninstall it, delete the `dune` folder in the data folder too.
 - **Sends** nothing over the network: only the town, to the owner's open Pi Pocket tabs (`web.send`). In the browser
   it keeps a few view choices in `localStorage`, under `x.dune.*`.
 - **Changes** nothing: each hook only records, catches its own errors, returns `undefined`, and never waits.
@@ -140,7 +147,8 @@ changes, the desert fails soft: it loses a link, a label, or a work, never a cal
 
 - `dune.ts`: the server module. Hooks `beforeTool`, `afterTool`, `beforeRequest`, `afterResponse`, and `onYield`
   turn what they see into small events (`tool`, `done`, `think`, `reply`, `msg`, `link`, `idle`) and running counts.
-  Routes: `GET world`, `GET meta/:source` (a `conversationRoute`), and `POST reset`.
+  Routes: `GET world` (the sessions active in the last 12 hours), `GET history?from=&to=` (the compact history in a
+  window, for the Night replay), `GET meta/:source` (a `conversationRoute`), and `POST reset`.
 - `dune/index.js`: the page (Preact and htm from Pi Pocket): status bar, Chronicle, dossiers, glossary, and splash.
 - `dune/world.js`: the engine. It lays the desert out, paints the dunes once from a height field, walks the agents,
   flies the ornithopters, raises the works, and draws day, night, worms, and storms on a canvas.

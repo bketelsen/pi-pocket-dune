@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import type { Host, Web } from "../_pocket.d.ts";
-import setup from "../dune.ts";
+import setup, { capHistory } from "../dune.ts";
 
 type Handler = (...args: never[]) => unknown;
 type Route = (request: unknown) => unknown;
@@ -69,6 +69,15 @@ async function harness() {
             convs: Record<string, unknown>;
             events: Record<string, unknown>[];
             unknown: string[];
+            active: number;
+        };
+    const history = (query = "") =>
+        routes.get("GET history")!({ query: new URLSearchParams(query) }) as {
+            from: number;
+            to: number;
+            now: number;
+            convs: Record<string, { title?: string; tools?: unknown }>;
+            events: Record<string, unknown>[];
         };
     const meta = (id: string, title = "A session") =>
         routes.get("GET meta/:source")!({
@@ -92,6 +101,7 @@ async function harness() {
         api,
         tool,
         world,
+        history,
         meta,
         dispose,
     };
@@ -102,6 +112,7 @@ test("it adds its routes and its page, and names its extension", async () => {
 
     assert.equal(town.extension.name, "dune");
     assert.deepEqual([...town.routes.keys()].sort(), [
+        "GET history",
         "GET meta/:source",
         "GET world",
         "POST reset",
@@ -877,4 +888,314 @@ test("a failing team extension changes nothing", async () => {
         delete shared[key];
         await town.dispose();
     }
+});
+
+// Only the sessions with something in the last 12 hours, and the sietches they hang from.
+test("the world shows only the sessions active in the last 12 hours, with their ancestors", async (t) => {
+    const town = await harness();
+    const start = Date.now();
+
+    await town.meta("1", "Old sietch");
+    await town.meta("2", "Quiet sietch");
+    // A subagent that 1's own tool call started, then left alone.
+    town.handlers.afterTool!(
+        { id: "spawn", name: "subagent", arguments: { action: "spawn", name: "scout" } },
+        {
+            isError: false,
+            output: [],
+            details: { conversationId: "3", name: "scout", action: "spawn" },
+        },
+        town.api("1"),
+    );
+    // A session nobody confirmed, and nothing in it since.
+    town.tool("h1", "9", "read", { path: "a.md" });
+
+    // Thirteen hours on, only the subagent works: its sietch 1 shows with it, and 2 and 9 do not.
+    t.mock.method(Date, "now", () => start + 13 * 60 * 60_000);
+    town.tool("t1", "3", "read", { path: "b.md" });
+
+    const world = town.world();
+
+    assert.deepEqual(Object.keys(world.convs).sort(), ["1", "3"]);
+    assert.equal(world.active, 12 * 60 * 60_000);
+    assert.deepEqual(world.unknown, []);
+    await town.dispose();
+});
+
+test("asking for a session's meta again does not make an old session active", async (t) => {
+    const town = await harness();
+
+    await town.meta("1", "First look");
+
+    const first = (town.world().convs["1"] as { last: number }).last;
+
+    t.mock.method(Date, "now", () => first + 60_000);
+    await town.meta("1", "Asked again");
+
+    assert.equal((town.world().convs["1"] as { last: number }).last, first);
+
+    // A session seen for the first time is new now.
+    await town.meta("2");
+    assert.equal((town.world().convs["2"] as { last: number }).last, first + 60_000);
+    await town.dispose();
+});
+
+test("the history keeps tool, done, msg, link, and idle, short and without error text", async (t) => {
+    const town = await harness();
+    const start = Date.now();
+    const long = "x".repeat(400);
+
+    await town.meta("1", "Mine");
+    town.tool("t1", "1", "bash", { command: `echo ${long}` });
+    town.handlers.afterTool!(
+        { id: "t1", name: "bash" },
+        { isError: true, output: [{ type: "text", text: "a private error" }] },
+        town.api("1"),
+    );
+    town.handlers.beforeRequest!(
+        { messages: [{ role: "user", content: `[from: Sam] ${long}`, timestamp: 1 }] },
+        town.api("1", "task-one"),
+        {},
+    );
+    town.handlers.afterResponse!(
+        { content: [{ type: "text", text: long }], provider: "p", model: "m", timestamp: 2 },
+        town.api("1", "task-two"),
+    );
+    town.handlers.onYield!({ content: [] }, town.api("1", "task-three"));
+    town.handlers.afterTool!(
+        { id: "spawn", name: "subagent", arguments: { action: "spawn", name: "scout" } },
+        {
+            isError: false,
+            output: [],
+            details: { conversationId: "2", name: "scout", action: "spawn" },
+        },
+        town.api("1"),
+    );
+
+    const answer = town.history(`from=${start - 1000}&to=${start + 10_000}`);
+    const kinds = new Set(answer.events.map((each) => each.k));
+
+    for (const kind of ["tool", "done", "msg", "link", "idle"]) {
+        assert.ok(kinds.has(kind), `${kind} is in the history`);
+    }
+
+    assert.ok(!kinds.has("think"));
+    assert.ok(!kinds.has("reply"));
+
+    const tool = answer.events.find((each) => each.k === "tool" && each.n === "bash");
+    const done = answer.events.find((each) => each.k === "done" && each.n === "bash");
+    const said = answer.events.find((each) => each.k === "msg" && each.via === "human");
+
+    assert.equal(typeof tool?.call, "number", "a call is a number, not a long key");
+    assert.equal(tool?.call, tool?.id);
+    assert.equal(done?.call, tool?.id, "a done names its tool");
+    assert.equal(done?.e, undefined, "no error text goes in");
+    assert.equal(String(tool?.l).length, 60, "a label is clipped");
+    assert.equal(String(said?.text).length, 80, "a message is clipped");
+    assert.ok(!JSON.stringify(answer).includes("a private error"));
+    await town.dispose();
+});
+
+test("the history route answers only its window, and never an unconfirmed session", async (t) => {
+    const town = await harness();
+    const start = Date.now();
+
+    await town.meta("1", "Mine");
+    town.tool("t1", "1", "read", { path: "a.md" });
+
+    t.mock.method(Date, "now", () => start + 60_000);
+    town.tool("t2", "1", "read", { path: "b.md" });
+    town.tool("h1", "9", "read", { path: "hidden.md" });
+
+    const early = town.history(`from=${start - 1000}&to=${start + 30_000}`);
+
+    assert.deepEqual(
+        early.events.map((each) => each.i),
+        ["a.md"],
+    );
+    assert.deepEqual(Object.keys(early.convs), ["1"]);
+    assert.ok(early.convs["1"]?.tools, "a confirmed session comes whole");
+
+    const all = town.history();
+
+    assert.deepEqual(all.events.map((each) => each.i).sort(), ["a.md", "b.md"]);
+    assert.ok(!JSON.stringify(all).includes("hidden.md"));
+    assert.deepEqual(Object.keys(all.convs), ["1"]);
+
+    // Numbers that are not numbers give the defaults.
+    const ask = town.history("from=notanumber&to=");
+
+    assert.equal(ask.from, ask.now - 24 * 60 * 60_000);
+    assert.equal(ask.to, ask.now);
+    await town.dispose();
+});
+
+test("the history file is 0600, keeps an unconfirmed session bare, and comes back after a restart", async (t) => {
+    const town = await harness();
+    const start = Date.now();
+
+    await town.meta("1", "Mine");
+    town.tool("t1", "1", "bash", { command: "echo mine-visible" });
+    town.tool("t2", "8", "bash", { command: "echo hidden-words-here" });
+    await town.dispose();
+
+    const historyFile = join(dataDir, "dune", "history.json");
+    const kept = JSON.parse(await readFile(historyFile, "utf8"));
+
+    assert.equal(kept.v, 1);
+    assert.equal((await stat(historyFile)).mode & 0o777, 0o600);
+    assert.ok(JSON.stringify(kept).includes("mine-visible"));
+    assert.ok(!JSON.stringify(kept).includes("hidden-words-here"));
+
+    const hidden = kept.events.filter((each: { c?: string }) => each.c === "8");
+
+    assert.ok(hidden.length > 0);
+
+    for (const event of hidden) {
+        assert.equal(event.l, undefined);
+        assert.equal(event.i, undefined);
+    }
+
+    // A restart loads it again.
+    forgetHandover();
+
+    const reopened = await harness();
+
+    assert.ok(reopened.history().events.some((each) => each.c === "1"));
+    await reopened.dispose();
+
+    // A day later it is past its window, and the file gives an empty history.
+    t.mock.method(Date, "now", () => start + 25 * 60 * 60_000);
+    forgetHandover();
+
+    const later = await harness();
+
+    assert.deepEqual(later.history().events, []);
+    await later.dispose();
+});
+
+test("the cap keeps the newest events inside the budget", () => {
+    assert.equal(capHistory([], 100), 0);
+    assert.equal(capHistory([10, 20, 30], 100), 0);
+    assert.equal(capHistory([10, 20, 30], 50), 1);
+    assert.equal(capHistory([10, 20, 30], 30), 2);
+    assert.equal(capHistory([10, 20, 30], 5), 3);
+});
+
+test("a reset empties the history, in memory and in its file", async () => {
+    const town = await harness();
+
+    await town.meta("1");
+    town.tool("t1", "1", "read", { path: "a.md" });
+    assert.ok(town.history().events.length > 0);
+
+    await town.routes.get("POST reset")!({});
+
+    const empty = town.history();
+
+    assert.deepEqual(empty.events, []);
+    assert.deepEqual(Object.keys(empty.convs), []);
+
+    const kept = JSON.parse(await readFile(join(dataDir, "dune", "history.json"), "utf8"));
+
+    assert.deepEqual(kept.events, []);
+    assert.deepEqual(kept.convs, {});
+    assert.deepEqual(Object.keys(town.world().convs), []);
+    await town.dispose();
+});
+
+// A busy night has more calls than a file can hold: they are sampled, so the whole night stays.
+test("a burst of tool calls is sampled, and every kept done matches a kept tool", async (t) => {
+    const town = await harness();
+    const start = Date.now();
+
+    await town.meta("1", "Mine");
+    t.mock.method(Date, "now", () => start);
+
+    for (let index = 0; index < 500; index++) {
+        town.tool(`c${index}`, "1", "read", { path: `f${index}.md` });
+        town.handlers.afterTool!(
+            { id: `c${index}`, name: "read" },
+            { isError: false, output: [] },
+            town.api("1"),
+        );
+    }
+
+    const answer = town.history();
+    const tools = answer.events.filter((each) => each.k === "tool");
+    const dones = answer.events.filter((each) => each.k === "done");
+
+    // The bucket starts with 60 tokens, and no time passes here.
+    assert.ok(tools.length <= 61, `${tools.length} tool events`);
+    assert.equal(tools.length, 60);
+    assert.equal(dones.length, tools.length);
+
+    const kept = new Set(tools.map((each) => each.id));
+
+    for (const done of dones) {
+        assert.ok(kept.has(done.call as number), "a done names a kept tool");
+    }
+
+    await town.dispose();
+});
+
+test("the first tool call of a turn is kept even when the bucket is empty", async (t) => {
+    const town = await harness();
+    const start = Date.now();
+
+    await town.meta("1", "Mine");
+    t.mock.method(Date, "now", () => start);
+
+    // Spend the bucket: sixty calls keep, and the next ones are sampled out.
+    for (let index = 0; index < 61; index++) {
+        town.tool(`d${index}`, "1", "read", { path: `drain${index}.md` });
+    }
+
+    town.tool("sampled", "1", "read", { path: "sampled.md" });
+    town.handlers.beforeRequest!(
+        { messages: [{ role: "user", content: "go on", timestamp: 1 }] },
+        town.api("1", "task-turn"),
+        {},
+    );
+    town.tool("after", "1", "read", { path: "after.md" });
+
+    const kept = town
+        .history()
+        .events.filter((each) => each.k === "tool")
+        .map((each) => each.i);
+
+    assert.ok(!kept.includes("sampled.md"), "a call with an empty bucket is sampled out");
+    assert.ok(kept.includes("after.md"), "the turn's first call is kept");
+    await town.dispose();
+});
+
+test("half an hour on, the bucket has room for tool calls again", async (t) => {
+    const town = await harness();
+    const start = Date.now();
+    let now = start;
+
+    await town.meta("1", "Mine");
+    t.mock.method(Date, "now", () => now);
+
+    for (let index = 0; index < 61; index++) {
+        town.tool(`d${index}`, "1", "read", { path: `drain${index}.md` });
+    }
+
+    assert.equal(
+        town.history().events.filter((each) => each.k === "tool").length,
+        60,
+        "the bucket is empty",
+    );
+
+    // Ten calls a minute: half an hour fills the bucket again.
+    now = start + 30 * 60_000;
+    town.tool("later", "1", "read", { path: "later.md" });
+
+    const kept = town
+        .history()
+        .events.filter((each) => each.k === "tool")
+        .map((each) => each.i);
+
+    assert.ok(kept.includes("later.md"), "the bucket fills again");
+    await town.dispose();
 });
