@@ -3,8 +3,9 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Host, Web } from "../_pocket.d.ts";
-import setup, { capHistory } from "../dune.ts";
+import setup, { capHistory, setHistoryBudgetForTests } from "../dune.ts";
 
 type Handler = (...args: never[]) => unknown;
 type Route = (request: unknown) => unknown;
@@ -1198,4 +1199,181 @@ test("half an hour on, the bucket has room for tool calls again", async (t) => {
 
     assert.ok(kept.includes("later.md"), "the bucket fills again");
     await town.dispose();
+});
+
+test("a subagent's answer text stays out of the history", async () => {
+    const town = await harness();
+
+    await town.meta("1", "Mine");
+    town.handlers.afterTool!(
+        { id: "spawn", name: "subagent", arguments: { action: "spawn", name: "scout" } },
+        {
+            isError: false,
+            output: [],
+            details: { conversationId: "2", name: "scout", action: "spawn" },
+        },
+        town.api("1"),
+    );
+    town.handlers.onYield!(
+        { content: [{ type: "text", text: "the spice-harvest-secret is safe" }] },
+        town.api("2"),
+    );
+
+    const answer = town.history();
+
+    assert.ok(
+        answer.events.some((each) => each.k === "msg" && each.via === "report"),
+        "the report itself shows",
+    );
+    assert.ok(!JSON.stringify(answer).includes("spice-harvest-secret"));
+
+    await town.dispose();
+
+    const kept = await readFile(join(dataDir, "dune", "history.json"), "utf8");
+
+    assert.ok(!kept.includes("spice-harvest-secret"));
+});
+
+test("the history prunes itself while nothing happens, and starts its timer again", async (t) => {
+    const start = Date.now();
+    let now = start;
+
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    t.mock.method(Date, "now", () => now);
+
+    const town = await harness();
+    const historyFile = join(dataDir, "dune", "history.json");
+
+    /** The history file as it is on disk, or undefined while it is not there yet. */
+    const saved = async (): Promise<{ events: unknown[]; convs: object } | undefined> => {
+        try {
+            return JSON.parse(await readFile(historyFile, "utf8")) as {
+                events: unknown[];
+                convs: object;
+            };
+        } catch {
+            return undefined;
+        }
+    };
+
+    /** Wait for the save chain: a real pause, since the module's timers are the mocked ones. */
+    const until = async (check: () => Promise<boolean>) => {
+        for (let round = 0; round < 200; round++) {
+            if (await check()) {
+                return;
+            }
+
+            await sleep(10);
+        }
+    };
+
+    await town.meta("1", "Mine");
+    town.tool("t1", "1", "read", { path: "a.md" });
+
+    // The first save runs a minute after the event.
+    t.mock.timers.tick(60_000);
+    await until(async () => (await saved())?.events.length === 1);
+    assert.equal((await saved())?.events.length, 1, "the timer wrote the file");
+
+    // Twenty-five hours on, with nothing new: the timer started after that save prunes the window.
+    now = start + 25 * 60 * 60_000;
+    assert.deepEqual(town.history().events, [], "an old event never leaves the route");
+
+    t.mock.timers.tick(60_000);
+    await until(async () => (await saved())?.events.length === 0);
+
+    const kept = await saved();
+
+    assert.deepEqual(kept?.events, []);
+    assert.deepEqual(kept?.convs, {});
+    await town.dispose();
+});
+
+test("a session confirmed after it recorded history keeps its words when the world forgets it", async (t) => {
+    const town = await harness();
+    const start = Date.now();
+    let now = start;
+
+    t.mock.method(Date, "now", () => now);
+
+    // Nobody confirmed it yet: its words are held back.
+    town.tool("h1", "5", "read", { path: "spice-ledger.md" });
+    assert.ok(!JSON.stringify(town.history()).includes("spice-ledger.md"));
+
+    // The owner opens it: the history learns that it is confirmed.
+    await town.meta("5", "The ledger");
+    assert.ok(JSON.stringify(town.history()).includes("spice-ledger.md"));
+
+    // The world trims it away, with 400 conversations newer than it.
+    now = start + 60_000;
+
+    for (let index = 0; index < 400; index++) {
+        town.tool(`g${index}`, `c${index}`, "read", { path: `other${index}.md` });
+    }
+
+    assert.equal(town.world().convs["5"], undefined, "the world forgot it");
+
+    const answer = town.history();
+
+    assert.ok(
+        answer.events.some((each) => each.c === "5"),
+        "the history still shows its events",
+    );
+    assert.ok(
+        answer.events.some((each) => each.c === "5" && each.i === "spice-ledger.md"),
+        "with their words",
+    );
+    assert.ok(answer.convs["5"], "and names it");
+    await town.dispose();
+});
+
+test("the history file stays inside its byte budget, even with many conversations", async () => {
+    setHistoryBudgetForTests(4000);
+
+    try {
+        const town = await harness();
+
+        await town.meta("1", "Mine");
+        town.tool("t1", "1", "read", { path: "a.md" });
+
+        // Many conversations, each with a long title that counts too.
+        for (let index = 0; index < 40; index++) {
+            const id = `s${index}`;
+
+            await town.meta(id, `Sietch ${index} of the deep desert ${"x".repeat(60)}`);
+            town.tool(`g${index}`, id, "read", { path: `some/long/path/file-${index}.md` });
+        }
+
+        await town.dispose();
+
+        const historyFile = join(dataDir, "dune", "history.json");
+        const text = await readFile(historyFile, "utf8");
+
+        assert.ok(Buffer.byteLength(text) <= 4000, `${Buffer.byteLength(text)} bytes`);
+        assert.ok(JSON.parse(text).events.length > 0, "some events stay");
+    } finally {
+        setHistoryBudgetForTests();
+    }
+});
+
+test("a budget too small for a conversation keeps no events and no conversations", async () => {
+    setHistoryBudgetForTests(40);
+
+    try {
+        const town = await harness();
+
+        await town.meta("1", "Mine");
+        town.tool("t1", "1", "read", { path: "a.md" });
+        await town.dispose();
+
+        const historyFile = join(dataDir, "dune", "history.json");
+        const text = await readFile(historyFile, "utf8");
+        const kept = JSON.parse(text);
+
+        assert.ok(Buffer.byteLength(text) <= 40, `${Buffer.byteLength(text)} bytes`);
+        assert.deepEqual(kept.events, []);
+        assert.deepEqual(kept.convs, {});
+    } finally {
+        setHistoryBudgetForTests();
+    }
 });

@@ -142,6 +142,64 @@ function insertEvents(store, events) {
     return fresh;
 }
 
+/**
+ * The session to ask Pi Pocket about next, or null when there is nothing to ask. The focus session comes first
+ * while the world does not hold it: the server leaves out a session quiet for more than 12 hours, and the desert
+ * must still show the one the owner looks at. Then a session the server holds back, then one whose title may have
+ * changed since it was asked. Pure, so a test can call it.
+ */
+export function nextAsk({
+    convs,
+    unknown,
+    visible,
+    focus,
+    asked,
+    askedAt,
+    askedTries,
+    retryAt,
+    now,
+}) {
+    const numeric = (id) => typeof id === "string" && /^\d+$/.test(id);
+    const waiting = (id) => (retryAt.get(id) ?? 0) > now;
+
+    if (numeric(focus) && !convs[focus] && !asked.has(focus) && !waiting(focus)) {
+        return focus;
+    }
+
+    // A session the server holds back until the owner's own request shows they may see it.
+    for (const [id, since] of unknown) {
+        if (numeric(id) && !asked.has(id) && !waiting(id) && now - since > 1200) {
+            return id;
+        }
+    }
+
+    for (const id of visible) {
+        const conv = convs[id];
+        // Titles change (Pi names a new session after its first answer): ask again now and then.
+        const untitled = !conv?.title || /^new session$/i.test(conv.title);
+        const tries = askedTries.get(id) ?? 0;
+        const stale =
+            asked.has(id) &&
+            (!untitled || tries < 5) &&
+            now - (askedAt.get(id) ?? 0) >
+                (untitled ? Math.min(300_000, 20_000 * 2 ** tries) : 300_000);
+
+        if (
+            numeric(id) &&
+            (!asked.has(id) || stale) &&
+            !waiting(id) &&
+            conv?.kind !== "subagent" &&
+            // Once each, per page: Pi Pocket's word on who each session is (its persona, from the
+            // team extension) can be newer than what the desert holds.
+            (stale || !asked.has(id) || !conv || !conv.title)
+        ) {
+            return id;
+        }
+    }
+
+    return null;
+}
+
 const portraits = new Map();
 
 function portrait(cast) {
@@ -814,37 +872,19 @@ export default function setup(pocket) {
                 }
 
                 const now = Date.now();
-                const waiting = (id) => (retryAt.get(id) ?? 0) > now;
-                const held = [...store.unknown].find(
-                    ([id, since]) => !asked.has(id) && !waiting(id) && now - since > 1200,
-                )?.[0];
-                const want =
-                    held ??
-                    world.visible.find((id) => {
-                        const conv = store.convs[id];
-                        // Titles change (Pi names a new session after its first answer): ask again now and then.
-                        const untitled = !conv?.title || /^new session$/i.test(conv.title);
-                        const tries = askedTries.get(id) ?? 0;
-                        const stale =
-                            asked.has(id) &&
-                            (!untitled || tries < 5) &&
-                            now - (askedAt.get(id) ?? 0) >
-                                (untitled ? Math.min(300_000, 20_000 * 2 ** tries) : 300_000);
+                const want = nextAsk({
+                    convs: store.convs,
+                    unknown: store.unknown,
+                    visible: world.visible,
+                    focus,
+                    asked,
+                    askedAt,
+                    askedTries,
+                    retryAt,
+                    now,
+                });
 
-                        return (
-                            /^\d+$/.test(id) &&
-                            (!asked.has(id) || stale) &&
-                            !waiting(id) &&
-                            conv?.kind !== "subagent" &&
-                            // Once each, per page: Pi Pocket's word on who each session is (its
-                            // persona, from the team extension) can be newer than what the desert holds.
-                            (stale || !asked.has(id) || !conv || !conv.title)
-                        );
-                    });
-
-                if (want === undefined || !/^\d+$/.test(want)) {
-                    want !== undefined && asked.add(want);
-
+                if (want === null) {
                     return;
                 }
 

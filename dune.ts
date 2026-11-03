@@ -59,6 +59,16 @@ const HISTORY_KINDS = new Set(["tool", "done", "msg", "link", "idle"]);
 const HISTORY_MAX = 40_000;
 /** The most bytes the history file may take. */
 const HISTORY_BYTES = 4_000_000;
+/** The bytes of a history file around its records and its events: `{"v":1,"convs":` … `,"events":[` … `]}`. */
+const HISTORY_FRAME =
+    Buffer.byteLength('{"v":1,"convs":') +
+    Buffer.byteLength(',"events":[') +
+    Buffer.byteLength("]}");
+/**
+ * The history file's byte budget: `HISTORY_BYTES`, unless a test lowers it to try the cap. A variable, so a test
+ * needs no second copy of the module.
+ */
+let historyBytes = HISTORY_BYTES;
 /** How long a change to the history waits before its file is written: the file is big, and a night is not urgent. */
 const HISTORY_SAVE_MS = 60_000;
 /** How many call keys the history keeps: the full `taskId:callId` is long, so an event keeps a number instead. */
@@ -697,7 +707,8 @@ function compact(event: Ev, calls: Map<string, number>): Ev | undefined {
             put("from", event.from);
             put("to", event.to);
             put("via", event.via);
-            put("text", short(event.text, 80));
+            // A subagent's answer is its report: the history keeps the tool calls and the words people send, not it.
+            put("text", event.via === "report" ? undefined : short(event.text, 80));
             put("call", call(event.call));
             break;
         case "link":
@@ -732,6 +743,11 @@ export function capHistory(sizes: number[], budget: number): number {
     }
 
     return 0;
+}
+
+/** Set the history file's byte budget, for a test that tries the cap. No argument gives the real one back. */
+export function setHistoryBudgetForTests(n?: number): void {
+    historyBytes = n ?? HISTORY_BYTES;
 }
 
 export default async function createDune(host: Host, web: Web) {
@@ -1089,62 +1105,138 @@ export default async function createDune(host: Host, web: Web) {
                 history.sizes.splice(0, drop);
             }
 
-            // Every record from the world as it is now, then only those an event still names, with their sietches.
+            // Every record from the world as it is now.
             for (const each of Object.values(history.convs)) {
                 remember(each.id);
             }
 
-            const keepIds = new Set<string>();
+            const records = history.convs;
 
-            for (const event of history.events) {
-                for (const id of named(event)) {
-                    let at: string | undefined = id;
+            /** The sietches a conversation hangs from, as keys. */
+            const sietches = (id: string): string[] => {
+                const out: string[] = [];
+                let at = world.convs[id]?.parent ?? records[safeKey(id)]?.parent;
 
-                    for (let depth = 0; at !== undefined && depth < 16; depth++) {
-                        keepIds.add(safeKey(at));
-                        at = world.convs[at]?.parent ?? history.convs[safeKey(at)]?.parent;
+                for (let depth = 0; at !== undefined && depth < 16; depth++) {
+                    out.push(safeKey(at));
+                    at = world.convs[at]?.parent ?? records[safeKey(at)]?.parent;
+                }
+
+                return out;
+            };
+
+            /** Only the records the remaining events name, with their sietches. */
+            const namedConvs = (): Record<string, HConv> => {
+                const kept = dict<HConv>();
+
+                for (const event of history.events) {
+                    for (const id of named(event)) {
+                        for (const key of [safeKey(id), ...sietches(id)]) {
+                            const each = records[key];
+
+                            if (each !== undefined) {
+                                kept[key] = each;
+                            }
+                        }
                     }
                 }
-            }
 
-            const convs = dict<HConv>();
+                return kept;
+            };
 
-            for (const key of keepIds) {
-                const each = history.convs[key];
+            /** The records as the file writes them: a session not yet confirmed keeps no title, name, or persona. */
+            const fileConvs = (): Record<string, HConv> => {
+                const out = dict<HConv>();
 
-                if (each === undefined) {
-                    continue;
+                for (const [key, each] of Object.entries(history.convs)) {
+                    out[key] =
+                        each.ok === true
+                            ? each
+                            : { ...each, title: undefined, name: undefined, persona: undefined };
                 }
 
-                // A session not yet confirmed keeps no title, name, or persona, as in the world's file.
-                convs[key] =
-                    each.ok === true
-                        ? each
-                        : { ...each, title: undefined, name: undefined, persona: undefined };
+                return out;
+            };
+
+            const payload = () =>
+                JSON.stringify({
+                    v: 1,
+                    convs: fileConvs(),
+                    events: history.events.map((event) => (hEventOk(event) ? event : bare(event))),
+                });
+
+            // Fill the file from the newest event back, and count the whole payload: the frame, every record with its
+            // comma, and every event with its own. The oldest events that do not fit go, and their records with them.
+            let convsSize = 2;
+            let convsCount = 0;
+            let eventsSize = 0;
+            let fit = 0;
+            const counted = new Set<string>();
+
+            for (let index = history.events.length - 1; index >= 0; index--) {
+                for (const id of named(history.events[index]!)) {
+                    for (const key of [safeKey(id), ...sietches(id)]) {
+                        const each = records[key];
+
+                        if (each === undefined || counted.has(key)) {
+                            continue;
+                        }
+
+                        counted.add(key);
+                        convsSize += Buffer.byteLength(JSON.stringify(each));
+                        convsSize += convsCount > 0 ? 1 : 0;
+                        convsCount++;
+                    }
+                }
+
+                const bytes = history.sizes[index]! + (fit > 0 ? 1 : 0);
+
+                if (HISTORY_FRAME + convsSize + eventsSize + bytes > historyBytes) {
+                    break;
+                }
+
+                eventsSize += bytes;
+                fit++;
             }
 
-            // The file's size: what names the conversations, then the newest events that still fit.
-            const room = HISTORY_BYTES - Buffer.byteLength(JSON.stringify(convs));
-            const cut = capHistory(history.sizes, room);
+            const cut = history.events.length - fit;
 
             if (cut > 0) {
                 history.events.splice(0, cut);
                 history.sizes.splice(0, cut);
             }
 
-            const data = {
-                v: 1,
-                convs,
-                events: history.events.map((event) => (hEventOk(event) ? event : bare(event))),
-            };
+            // A record no remaining event names goes from memory too: nothing a replay shows needs it.
+            history.convs = fit > 0 ? namedConvs() : dict();
+
+            let text = payload();
+
+            // The bytes themselves, not the count above: one record or one event can pass the rest on its own.
+            while (Buffer.byteLength(text) > historyBytes && history.events.length > 0) {
+                history.events.splice(0, 1);
+                history.sizes.splice(0, 1);
+                history.convs = namedConvs();
+                text = payload();
+            }
+
             const temporary = `${historyFile}.${process.pid}.${boot}.${++saves}.tmp`;
 
             try {
                 await mkdir(folder, { recursive: true, mode: 0o700 });
-                await writeFile(temporary, JSON.stringify(data), { mode: 0o600 });
+                await writeFile(temporary, text, { mode: 0o600 });
                 await rename(temporary, historyFile);
             } catch (error) {
                 console.warn("dune: could not save its history:", error);
+            }
+
+            // The history still holds events: look again in a minute, so what expires leaves memory and file even
+            // when nothing new happens.
+            if (!disposed && history.events.length > 0) {
+                historyTimer ??= setTimeout(() => {
+                    // A pass with nothing new still prunes: the timer marks the history for a save.
+                    history.dirty = true;
+                    saveHistory();
+                }, HISTORY_SAVE_MS);
             }
         });
 
@@ -2067,10 +2159,12 @@ export default async function createDune(host: Host, web: Web) {
 
             return Number.isFinite(value) ? value : fallback;
         };
-        const from = span(request.query.get("from"), now - HISTORY_MS);
+        const since = now - HISTORY_MS;
+        // Nothing older than the window leaves, whatever the page asks for.
+        const from = Math.max(span(request.query.get("from"), since), since);
         const to = span(request.query.get("to"), now);
         const events = history.events.filter(
-            (event) => event.at >= from && event.at <= to && hEventOk(event),
+            (event) => event.at >= since && event.at >= from && event.at <= to && hEventOk(event),
         );
         const convs = dict<Conv>();
         const shown = new Set<string>();
@@ -2221,6 +2315,7 @@ export default async function createDune(host: Host, web: Web) {
             }
 
             const shown = new Set([...release(), ...(wasOk ? [] : [id])]);
+
             const reveal = dict<Conv>();
 
             for (const [key, each] of Object.entries(world.convs)) {
@@ -2230,6 +2325,14 @@ export default async function createDune(host: Host, web: Web) {
                 ) {
                     reveal[key] = each;
                     shown.add(key);
+                }
+            }
+
+            // Confirmed now, with every subagent this confirms too: the history's records say so at once, so the
+            // events it keeps keep their words even after the world forgets the session.
+            for (const each of Object.values(history.convs)) {
+                if (each.ok !== true && isOk(each.id)) {
+                    remember(each.id);
                 }
             }
 

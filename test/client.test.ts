@@ -4,6 +4,8 @@ import test from "node:test";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
 import { castOf, lookup, titleName } from "../dune/cast.js";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
+import { nextAsk } from "../dune/index.js";
+// @ts-expect-error: the browser module is plain JavaScript, without types.
 import { Desert, nightWindow, partOf, recentIds, styleOf, titleOf } from "../dune/model.js";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
 import { placeDef } from "../dune/places.js";
@@ -309,4 +311,41 @@ test("a compact night of events builds a finished work", () => {
     assert.ok(effects.some((effect: { type: string }) => effect.type === "built"));
     assert.equal(desert.tasks.get("1")?.[0]?.state, "done");
     assert.equal(desert.open.has("1"), false);
+});
+
+test("a store without the focus session asks for the focus first", () => {
+    const other = { id: "2", kind: "session", title: "Another session" };
+    const convs = { "2": other };
+    const question = (
+        focus: string | null,
+        held: Record<string, { id: string; kind: string; title?: string }> = convs,
+        asked: Set<string> = new Set(),
+        retryAt: Map<string, number> = new Map(),
+    ) =>
+        nextAsk({
+            convs: held,
+            unknown: new Map<string, number>(),
+            visible: Object.keys(held),
+            focus,
+            asked,
+            askedAt: new Map<string, number>(),
+            askedTries: new Map<string, number>(),
+            retryAt,
+            now: 1000,
+        });
+
+    // The focus session was quiet for more than 12 hours: the world leaves it out, so ask for it first.
+    assert.equal(question("7"), "7");
+
+    // Asked once already, or the world holds it now: another session comes next.
+    assert.equal(question("7", convs, new Set(["7"])), "2");
+    assert.equal(question("7", { ...convs, "7": { id: "7", kind: "session" } }), "2");
+
+    // A focus that is not a session of the server (a person, the demo) is nobody to ask about.
+    assert.equal(question("human:Brian"), "2");
+
+    // A failed ask waits, like any other.
+    assert.equal(question("7", convs, new Set(), new Map([["7", 5000]])), "2");
+    // A focus that is not numeric but is in the world: no question about it either.
+    assert.equal(question(null, convs, new Set(["2"])), null);
 });
