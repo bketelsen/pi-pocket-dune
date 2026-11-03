@@ -4,7 +4,9 @@ import test from "node:test";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
 import { castOf, lookup, titleName } from "../dune/cast.js";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
-import { Desert, partOf, styleOf, titleOf } from "../dune/model.js";
+import { nextAsk } from "../dune/index.js";
+// @ts-expect-error: the browser module is plain JavaScript, without types.
+import { Desert, nightWindow, partOf, recentIds, styleOf, titleOf } from "../dune/model.js";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
 import { placeDef } from "../dune/places.js";
 
@@ -228,4 +230,156 @@ test("a task of other tools finishes as a Landsraad Pavilion", () => {
 
     assert.ok(effects.some((effect: { type: string }) => effect.type === "built"));
     assert.match(desert.chronicle[0].text, /Landsraad Pavilion/);
+});
+
+test("the map keeps the sessions active in the last 12 hours and their ancestors", () => {
+    const now = new Date(2026, 9, 31, 12, 0, 0, 0).getTime();
+    const hour = 60 * 60_000;
+    const convs = {
+        "1": { id: "1", kind: "session", last: now - 30 * hour },
+        "2": { id: "2", kind: "subagent", parent: "1", last: now - 1 * hour },
+        "3": { id: "3", kind: "session", last: now - 13 * hour },
+        "4": { id: "4", kind: "subagent", parent: "3", last: now - 14 * hour },
+        "5": { id: "5", kind: "session", last: now - 11 * hour },
+    };
+
+    // A session quiet for 13 hours is out; the one it started is out with it.
+    assert.deepEqual(recentIds(convs, now, 12 * hour), ["1", "2", "5"]);
+    // The quiet work of an old session still stands beside it, while the owner looks at it.
+    assert.deepEqual(recentIds(convs, now, 12 * hour, ["4"]), ["1", "2", "3", "4", "5"]);
+    // A session the world does not hold keeps nothing.
+    assert.deepEqual(recentIds(convs, now, 12 * hour, ["99"]), ["1", "2", "5"]);
+});
+
+test("the night runs from 20:00 to 07:00", () => {
+    const at = (day: number, hour: number) => new Date(2026, 9, day, hour, 0, 0, 0).getTime();
+    const lastNight = at(30, 20);
+    const thisMorning = at(31, 7);
+
+    // Late in the evening: the night began an hour ago.
+    assert.deepEqual(nightWindow(at(31, 21)), { from: at(31, 20), to: at(31, 21) });
+    // In the small hours: the night goes on.
+    assert.deepEqual(nightWindow(at(31, 3)), { from: lastNight, to: at(31, 3) });
+    // In the day: the whole of the last night.
+    assert.deepEqual(nightWindow(at(31, 10)), { from: lastNight, to: thisMorning });
+});
+
+test("a compact night of events builds a finished work", () => {
+    const desert = new Desert();
+
+    desert.reset({ "1": { id: "1", kind: "session" } });
+
+    // The shape the history route sends: a number for the call, and no error text.
+    const night = [
+        {
+            id: 1,
+            at: 1000,
+            k: "msg",
+            from: "human:Brian",
+            to: "1",
+            via: "human",
+            text: "Night work",
+        },
+        {
+            id: 2,
+            at: 2000,
+            k: "tool",
+            c: "1",
+            call: 1,
+            n: "read",
+            s: "files",
+            i: "a.go",
+            l: "read a.go",
+        },
+        { id: 3, at: 2500, k: "done", c: "1", call: 1, n: "read", ok: 1 },
+        {
+            id: 4,
+            at: 3000,
+            k: "tool",
+            c: "1",
+            call: 2,
+            n: "bash",
+            s: "shell",
+            i: "go test",
+            l: "go test ./...",
+        },
+        { id: 5, at: 4000, k: "done", c: "1", call: 2, n: "bash", ok: 1 },
+        { id: 6, at: 5000, k: "idle", c: "1" },
+    ];
+    const effects = night.flatMap((event) => desert.apply(event));
+
+    assert.ok(effects.some((effect: { type: string }) => effect.type === "built"));
+    assert.equal(desert.tasks.get("1")?.[0]?.state, "done");
+    assert.equal(desert.open.has("1"), false);
+});
+
+test("a store without the focus session asks for the focus first", () => {
+    const other = { id: "2", kind: "session", title: "Another session" };
+    const convs = { "2": other };
+    const question = (
+        focus: string | null,
+        held: Record<string, { id: string; kind: string; title?: string }> = convs,
+        asked: Set<string> = new Set(),
+        retryAt: Map<string, number> = new Map(),
+    ) =>
+        nextAsk({
+            convs: held,
+            unknown: new Map<string, number>(),
+            visible: Object.keys(held),
+            focus,
+            asked,
+            askedAt: new Map<string, number>(),
+            askedTries: new Map<string, number>(),
+            retryAt,
+            now: 1000,
+        });
+
+    // The focus session was quiet for more than 12 hours: the world leaves it out, so ask for it first.
+    assert.equal(question("7"), "7");
+
+    // Asked once already, or the world holds it now: another session comes next.
+    assert.equal(question("7", convs, new Set(["7"])), "2");
+    assert.equal(question("7", { ...convs, "7": { id: "7", kind: "session" } }), "2");
+
+    // A focus that is not a session of the server (a person, the demo) is nobody to ask about.
+    assert.equal(question("human:Brian"), "2");
+
+    // A failed ask waits, like any other.
+    assert.equal(question("7", convs, new Set(), new Map([["7", 5000]])), "2");
+    // A focus that is not numeric but is in the world: no question about it either.
+    assert.equal(question(null, convs, new Set(["2"])), null);
+});
+
+test("an empty world still asks for a missing focus session", () => {
+    // The automatic demo shows a desert of its own, so the page names no session of the server: only the focus
+    // session can be chosen, and its answer ends the demo.
+    const want = nextAsk({
+        convs: {},
+        unknown: new Map<string, number>(),
+        visible: [],
+        focus: "12",
+        asked: new Set<string>(),
+        askedAt: new Map<string, number>(),
+        askedTries: new Map<string, number>(),
+        retryAt: new Map<string, number>(),
+        now: 1000,
+    });
+
+    assert.equal(want, "12");
+
+    // No focus, or one the server cannot name: nothing to ask, so the demo runs on.
+    assert.equal(
+        nextAsk({
+            convs: {},
+            unknown: new Map<string, number>(),
+            visible: [],
+            focus: "human:Brian",
+            asked: new Set<string>(),
+            askedAt: new Map<string, number>(),
+            askedTries: new Map<string, number>(),
+            retryAt: new Map<string, number>(),
+            now: 1000,
+        }),
+        null,
+    );
 });

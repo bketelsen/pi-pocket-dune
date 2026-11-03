@@ -4,7 +4,7 @@
 // structure beside each sietch for every task. Worms pass. Storms rise when the calls fail. A day lasts 8 minutes.
 
 import { castOf, hash, homeWord } from "./cast.js";
-import { Desert, PART, STYLE, styleOf } from "./model.js";
+import { Desert, PART, STYLE, recentIds, styleOf } from "./model.js";
 import { CITADEL, CORE, STATIONS, placeDef } from "./places.js";
 
 const DAY_MS = 8 * 60_000;
@@ -167,6 +167,7 @@ export class World {
             typeof matchMedia === "function" &&
             matchMedia("(prefers-reduced-motion: reduce)").matches;
         this.replay = null;
+        this.prunedAt = 0;
         this.nextWorm = performance.now() + 8000;
         this.storm = 0;
         this.sound = null;
@@ -288,9 +289,21 @@ export class World {
         return at;
     }
 
-    /** The sessions in view: all of them, or the focus session's whole family. */
+    /**
+     * The sessions in view: those active in the last 12 hours and their ancestors (a server that sends `recent`
+     * says how long that is), or all of them when it does not (the demo and the night store); then the focus
+     * session's whole family, or every one.
+     */
     get visible() {
-        const ids = Object.keys(this.data.convs);
+        const ids =
+            typeof this.data.recent === "number"
+                ? recentIds(
+                      this.data.convs,
+                      Date.now(),
+                      this.data.recent,
+                      this.focus ? [this.focus] : [],
+                  )
+                : Object.keys(this.data.convs);
 
         if (this.scope !== "family" || !this.focus || !this.data.convs[this.focus]) {
             return ids;
@@ -899,7 +912,11 @@ export class World {
 
     // ——— the replay ———
 
-    startReplay(events, speed = 1) {
+    /**
+     * Play `events` again. `speed` shortens the pauses; with `options.span` (ms of real time) the whole time is
+     * squeezed into it instead, so a whole night plays in minutes. `options.night` draws it as night.
+     */
+    startReplay(events, speed = 1, options = {}) {
         const list = events.filter((event) => this.data.convs[event.c] || event.k === "msg");
 
         this.model.reset(this.data.convs);
@@ -908,16 +925,30 @@ export class World {
             agent.pos = { ...agent.home };
         });
 
-        let at = 0;
+        const span = Number(options.span) > 0 ? Number(options.span) : null;
+        // How much of the clock one ms of real time stands for; a night starts at once.
+        const scale = span ? Math.max(1, span / (options.length ?? 180_000)) : 1;
+        let at = span ? 0 : 25;
         const queue = list.map((event, index) => {
-            const gap = index === 0 ? 0 : clamp(event.at - list[index - 1].at, 0, 900) / speed;
+            if (index > 0) {
+                const diff = event.at - list[index - 1].at;
 
-            at += Math.max(gap, 25);
+                // A night has no 25 ms floor: a burst of calls lands in one frame.
+                at += span
+                    ? clamp(diff / scale, 0, 1500)
+                    : Math.max(clamp(diff, 0, 900) / speed, 25);
+            }
 
             return { event, at };
         });
 
-        this.replay = { queue, index: 0, t0: performance.now(), total: at };
+        this.replay = {
+            queue,
+            index: 0,
+            t0: performance.now(),
+            total: at,
+            night: Boolean(options.night),
+        };
         this.layout(true);
     }
 
@@ -1169,6 +1200,11 @@ export class World {
 
     // ——— what the page shows ———
 
+    /** The light to draw: the night during a night replay, else the owner's choice. */
+    get skyMode() {
+        return this.replay?.night ? "night" : this.sky;
+    }
+
     stats() {
         const now = Date.now();
         let homes = 0;
@@ -1176,6 +1212,13 @@ export class World {
         let active = 0;
         let tokens = 0;
         let cost = 0;
+
+        // A session that went quiet leaves the map while the page stays open. Once a minute is enough, and the
+        // layout compares its key before it does any work.
+        if (now - this.prunedAt > 60_000) {
+            this.prunedAt = now;
+            this.layout();
+        }
 
         for (const agent of this.agents.values()) {
             agent.kind === "subagent" ? helpers++ : homes++;
@@ -1199,8 +1242,10 @@ export class World {
             tokens,
             cost,
             storm: this.model.storm,
-            time: timeWord(skyAt(now, this.sky)),
+            time: timeWord(skyAt(now, this.skyMode)),
             replay: this.replay ? Math.round((this.replay.progress ?? 0) * 100) : null,
+            replayAt: this.replay ? this.model.lastAt : null,
+            night: Boolean(this.replay?.night),
         };
     }
 
@@ -1457,7 +1502,7 @@ export class World {
 
     draw(now) {
         const { ctx, view, cam } = this;
-        const sky = skyAt(Date.now(), this.sky);
+        const sky = skyAt(Date.now(), this.skyMode);
 
         this.sun = sky;
 

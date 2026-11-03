@@ -573,7 +573,8 @@
 }
 
 .dune-loading,
-.dune-error {
+.dune-error,
+.dune-note {
     position: absolute;
     left: 50%;
     bottom: 24px;
@@ -592,6 +593,16 @@
 .dune-error {
     border-color: rgba(255, 90, 60, 0.6);
     color: #ffb4a0;
+}
+
+/* A short word, gone in a few seconds: no history for the night, and the like. */
+.dune-note {
+    bottom: 64px;
+    padding: 6px 12px;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: none;
+    color: rgba(243, 226, 181, 0.9);
 }
 
 @keyframes dune-rise {

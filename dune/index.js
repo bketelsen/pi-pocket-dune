@@ -3,7 +3,7 @@
 
 import { FACTIONS, SAYINGS, helperWord } from "./cast.js";
 import { Demo } from "./demo.js";
-import { fmt, solaris } from "./model.js";
+import { fmt, nightWindow, solaris } from "./model.js";
 import { PLACES } from "./places.js";
 import { Sound } from "./sound.js";
 import { World, portraitURL } from "./world.js";
@@ -52,6 +52,10 @@ const write = (name, value) => {
 
 const time = (at) =>
     new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+/** The hour and minute of a time, on the Imperium's clock: 21:05. */
+const clock = (at) =>
+    new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
 /** A record of what the server sent, keyed by its names: with no prototype, no name can reach one. */
 const table = (from) => Object.assign(Object.create(null), from ?? {});
@@ -136,6 +140,64 @@ function insertEvents(store, events) {
     }
 
     return fresh;
+}
+
+/**
+ * The session to ask Pi Pocket about next, or null when there is nothing to ask. The focus session comes first
+ * while the world does not hold it: the server leaves out a session quiet for more than 12 hours, and the desert
+ * must still show the one the owner looks at. Then a session the server holds back, then one whose title may have
+ * changed since it was asked. Pure, so a test can call it.
+ */
+export function nextAsk({
+    convs,
+    unknown,
+    visible,
+    focus,
+    asked,
+    askedAt,
+    askedTries,
+    retryAt,
+    now,
+}) {
+    const numeric = (id) => typeof id === "string" && /^\d+$/.test(id);
+    const waiting = (id) => (retryAt.get(id) ?? 0) > now;
+
+    if (numeric(focus) && !convs[focus] && !asked.has(focus) && !waiting(focus)) {
+        return focus;
+    }
+
+    // A session the server holds back until the owner's own request shows they may see it.
+    for (const [id, since] of unknown) {
+        if (numeric(id) && !asked.has(id) && !waiting(id) && now - since > 1200) {
+            return id;
+        }
+    }
+
+    for (const id of visible) {
+        const conv = convs[id];
+        // Titles change (Pi names a new session after its first answer): ask again now and then.
+        const untitled = !conv?.title || /^new session$/i.test(conv.title);
+        const tries = askedTries.get(id) ?? 0;
+        const stale =
+            asked.has(id) &&
+            (!untitled || tries < 5) &&
+            now - (askedAt.get(id) ?? 0) >
+                (untitled ? Math.min(300_000, 20_000 * 2 ** tries) : 300_000);
+
+        if (
+            numeric(id) &&
+            (!asked.has(id) || stale) &&
+            !waiting(id) &&
+            conv?.kind !== "subagent" &&
+            // Once each, per page: Pi Pocket's word on who each session is (its persona, from the
+            // team extension) can be newer than what the desert holds.
+            (stale || !asked.has(id) || !conv || !conv.title)
+        ) {
+            return id;
+        }
+    }
+
+    return null;
 }
 
 const portraits = new Map();
@@ -254,6 +316,8 @@ export default function setup(pocket) {
                 store.events = world.events ?? [];
                 store.maxId = store.events.at(-1)?.id ?? 0;
                 store.boot = world.boot ?? null;
+                // How long a session may stay quiet and still stand on the map: the server's 12 hours, unless it says.
+                store.recent = world.active ?? 12 * 60 * 60_000;
                 store.unknown = new Map((world.unknown ?? []).map((id) => [id, 0]));
 
                 // Batches that came while it loaded, newer than what it holds, in order. One missing: load again.
@@ -665,6 +729,15 @@ export default function setup(pocket) {
                         >`,
                 )}
             </div>
+            <h4>Seeing it again</h4>
+            <p>
+                Replay plays the day again as a time-lapse. Night plays the last night again, from
+                20:00 to 07:00, in a few minutes, under the two moons.
+            </p>
+            <p class="dune-muted">
+                The desert shows only the sessions active in the last 12 hours, and the sessions
+                they came from.
+            </p>
             <p class="dune-muted">
                 A day on Arrakis lasts 8 minutes. Drag to pan; scroll or pinch to zoom; tap anyone.
             </p>
@@ -690,6 +763,9 @@ export default function setup(pocket) {
         const [selection, setSelection] = useState(null);
         const [scope, setScope] = useState("all");
         const [demo, setDemo] = useState(false);
+        const [night, setNight] = useState(null);
+        const [notice, setNotice] = useState(null);
+        const noticeTimer = useRef(0);
         const [sound, setSound] = useState(false);
         const [sky, setSky] = useState(() => read("sky", "cycle"));
         const [chronicle, setChronicle] = useState(
@@ -708,6 +784,13 @@ export default function setup(pocket) {
         }
 
         const focus = focusRef.current.id;
+
+        /** A short word over the desert, gone in 4 seconds: what could not be done, and why. */
+        const say = (text) => {
+            setNotice(text);
+            clearTimeout(noticeTimer.current);
+            noticeTimer.current = setTimeout(() => setNotice(null), 4000);
+        };
 
         useEffect(() => {
             const world = new World(canvasRef.current, store);
@@ -762,49 +845,54 @@ export default function setup(pocket) {
             };
 
             world.onReplayEnd = () => {
-                world.stopReplay(world.data.events);
+                if (world.replay?.night) {
+                    endNight();
+                } else {
+                    world.stopReplay(world.data.events);
+                }
             };
+
+            /** Back to the live desert, as `stopDemo` does: the night's data goes, the store's comes back. */
+            function endNight() {
+                world.replay = null;
+                world.reset(store);
+                world.setScope(focus ? read("scope", "family") : "all", focus);
+                world.derive(store.events);
+                setScope(world.scope);
+                setNight(null);
+            }
 
             const splashTimer = setTimeout(() => setSplash(false), 2600);
 
             // Titles, and the sessions the server holds back until the owner's own request shows they may see them.
             const askMeta = () => {
-                if (asking || demoRef.current || !store.loaded) {
+                // A night replay shows the past: its sessions are not the live ones to ask about.
+                if (asking || !store.loaded || world.replay?.night) {
                     return;
                 }
 
+                // The demo shows work of its own. Only the focus session is still asked about there: a quiet one
+                // is not in the world, and the desert must show the session the owner looks at.
+                if (demoRef.current && !autoDemo) {
+                    return;
+                }
+
+                const showing = Boolean(demoRef.current);
                 const now = Date.now();
-                const waiting = (id) => (retryAt.get(id) ?? 0) > now;
-                const held = [...store.unknown].find(
-                    ([id, since]) => !asked.has(id) && !waiting(id) && now - since > 1200,
-                )?.[0];
-                const want =
-                    held ??
-                    world.visible.find((id) => {
-                        const conv = store.convs[id];
-                        // Titles change (Pi names a new session after its first answer): ask again now and then.
-                        const untitled = !conv?.title || /^new session$/i.test(conv.title);
-                        const tries = askedTries.get(id) ?? 0;
-                        const stale =
-                            asked.has(id) &&
-                            (!untitled || tries < 5) &&
-                            now - (askedAt.get(id) ?? 0) >
-                                (untitled ? Math.min(300_000, 20_000 * 2 ** tries) : 300_000);
+                const want = nextAsk({
+                    convs: store.convs,
+                    // The demo's sessions are not the server's: never ask about them.
+                    unknown: showing ? new Map() : store.unknown,
+                    visible: showing ? [] : world.visible,
+                    focus,
+                    asked,
+                    askedAt,
+                    askedTries,
+                    retryAt,
+                    now,
+                });
 
-                        return (
-                            /^\d+$/.test(id) &&
-                            (!asked.has(id) || stale) &&
-                            !waiting(id) &&
-                            conv?.kind !== "subagent" &&
-                            // Once each, per page: Pi Pocket's word on who each session is (its
-                            // persona, from the team extension) can be newer than what the desert holds.
-                            (stale || !asked.has(id) || !conv || !conv.title)
-                        );
-                    });
-
-                if (want === undefined || !/^\d+$/.test(want)) {
-                    want !== undefined && asked.add(want);
-
+                if (want === null) {
                     return;
                 }
 
@@ -831,6 +919,14 @@ export default function setup(pocket) {
                         store.humans = answer.humans ? table(answer.humans) : store.humans;
 
                         const added = insertEvents(store, answer.events ?? []).length;
+
+                        // The answer of a quiet focus session gives the automatic demo a real desert to go to.
+                        if (autoDemo && demoRef.current && Object.keys(store.convs).length > 0) {
+                            autoDemo = false;
+                            worldRef.current.stopDemo();
+
+                            return;
+                        }
 
                         // The demo has data of its own, and a replay shows the past: both take this when they end.
                         if (world.data !== store || world.replay) {
@@ -865,7 +961,8 @@ export default function setup(pocket) {
                     failures.clear();
                     setSelection(null);
 
-                    if (!demoRef.current) {
+                    // A night replay shows the past, and the store is empty until it ends.
+                    if (!demoRef.current && !world.replay?.night) {
                         world.reset(store);
                         world.setScope(world.scope, focus);
                         world.derive(store.events);
@@ -939,6 +1036,11 @@ export default function setup(pocket) {
             }, 500);
 
             function startDemo() {
+                // One show at a time: the demo takes the desert back from the night.
+                if (world.replay?.night) {
+                    endNight();
+                }
+
                 const fake = new Demo();
 
                 demoRef.current = fake;
@@ -966,10 +1068,79 @@ export default function setup(pocket) {
                 setDemo(false);
             };
 
+            // ——— the night ———
+
+            let nightAsking = false;
+
+            worldRef.current.startNight = async () => {
+                if (nightAsking || world.replay?.night) {
+                    return;
+                }
+
+                nightAsking = true;
+                setNight("loading");
+
+                const { from, to } = nightWindow(Date.now());
+                let answer = null;
+
+                try {
+                    answer = await pocket.api(`history?from=${from}&to=${to}`);
+                } catch {
+                    answer = null;
+                }
+
+                nightAsking = false;
+
+                if (stopped) {
+                    setNight(null);
+
+                    return;
+                }
+
+                if (!answer?.events?.length) {
+                    setNight(null);
+                    say("No history for the night yet");
+
+                    return;
+                }
+
+                // The plain replay and the night are one slot: the night takes it.
+                if (world.replay) {
+                    world.stopReplay(world.data.events);
+                }
+
+                if (demoRef.current) {
+                    worldRef.current.stopDemo();
+                }
+
+                const past = {
+                    convs: table(answer.convs),
+                    res: store.res,
+                    humans: store.humans,
+                    events: answer.events,
+                    loaded: true,
+                    unknown: new Map(),
+                    batch: 0,
+                    maxId: 0,
+                };
+
+                world.reset(past);
+                world.setScope("all", null);
+                world.startReplay(answer.events, 1, { span: to - from, night: true });
+                world.fit();
+                setScope("all");
+                setNight("on");
+            };
+
+            worldRef.current.stopNight = () => {
+                world.replay?.night && endNight();
+            };
+
             return () => {
                 stopped = true;
                 clearInterval(tick);
                 clearTimeout(splashTimer);
+                clearTimeout(noticeTimer.current);
                 observer.disconnect();
                 listeners.delete(onFresh);
                 demoRef.current?.stop();
@@ -1019,10 +1190,27 @@ export default function setup(pocket) {
                 return;
             }
 
+            if (world.replay?.night) {
+                // The night holds the replay until it ends: press Night to stop it.
+                return;
+            }
+
             if (world.replay) {
                 world.stopReplay(world.data.events);
             } else {
                 world.startReplay(world.data.events, 4);
+            }
+        };
+
+        const nightReplay = () => {
+            if (!world) {
+                return;
+            }
+
+            if (world.replay?.night) {
+                world.stopNight?.();
+            } else {
+                world.startNight?.();
             }
         };
 
@@ -1083,12 +1271,28 @@ export default function setup(pocket) {
                         See all
                     </button>
                     <button
-                        class=${`dune-btn${world?.replay ? " dune-on" : ""}`}
+                        class=${`dune-btn${world?.replay && !night ? " dune-on" : ""}`}
                         onClick=${replay}
                         title="The day again, as a time-lapse"
                     >
-                        ${stats?.replay !== null && stats?.replay !== undefined ? `Replay ${stats.replay}%` : "Replay"}
+                        ${world?.replay && !night && stats?.replay !== null && stats?.replay !== undefined ? `Replay ${stats.replay}%` : "Replay"}
                     </button>
+                    ${
+                        !demo &&
+                        html`<button
+                            class=${`dune-btn${night ? " dune-on" : ""}`}
+                            onClick=${nightReplay}
+                            title="Replay the night: 20:00 to 07:00, from the last 24 hours"
+                        >
+                            ${
+                                night === "loading"
+                                    ? "Night…"
+                                    : night
+                                      ? `☾ ${clock(stats?.replayAt || Date.now())}`
+                                      : "Night"
+                            }
+                        </button>`
+                    }
                     <button class="dune-btn" onClick=${cycleSky} title="Day and night">
                         ${{ cycle: "☾☀", day: "☀", night: "☾" }[sky]}
                     </button>
@@ -1138,6 +1342,7 @@ export default function setup(pocket) {
             ${Sheet && html`<${Sheet} info=${selection} onClose=${close} onPick=${pick} onOpen=${(id) => pocket.openConversation(id)} demo=${demo} />`}
             ${manual && html`<${Glossary} onClose=${() => setManual(false)} onForget=${forget} demo=${demo} />`}
             ${error && html`<div class="dune-error">The desert could not be reached: ${error}</div>`}
+            ${notice && html`<div class="dune-note">${notice}</div>`}
             ${!ready && !error && html`<div class="dune-loading">Listening for the thumpers…</div>`}
             ${
                 splash &&
