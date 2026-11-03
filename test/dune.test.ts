@@ -27,6 +27,17 @@ afterEach(async () => {
     await rm(dataDir, { recursive: true, force: true });
 });
 
+/** Wait for a real save: those tests mock the module's timers, so a real pause is the one that waits. */
+async function until(check: () => Promise<boolean>) {
+    for (let round = 0; round < 200; round++) {
+        if (await check()) {
+            return;
+        }
+
+        await sleep(10);
+    }
+}
+
 async function harness() {
     const routes = new Map<string, Route>();
     const sent: { event: string; data: unknown }[] = [];
@@ -1256,17 +1267,6 @@ test("the history prunes itself while nothing happens, and starts its timer agai
         }
     };
 
-    /** Wait for the save chain: a real pause, since the module's timers are the mocked ones. */
-    const until = async (check: () => Promise<boolean>) => {
-        for (let round = 0; round < 200; round++) {
-            if (await check()) {
-                return;
-            }
-
-            await sleep(10);
-        }
-    };
-
     await town.meta("1", "Mine");
     town.tool("t1", "1", "read", { path: "a.md" });
 
@@ -1376,4 +1376,72 @@ test("a budget too small for a conversation keeps no events and no conversations
     } finally {
         setHistoryBudgetForTests();
     }
+});
+
+test("a restart drops the events that expired while it was down", async (t) => {
+    const start = Date.now();
+    let now = start;
+    const town = await harness();
+
+    await town.meta("1", "Mine");
+    town.tool("t1", "1", "read", { path: "a.md" });
+    await town.dispose();
+
+    // Twenty-five hours on, every event in the file is past its window, and its records are not.
+    now = start + 25 * 60 * 60_000;
+    t.mock.method(Date, "now", () => now);
+    forgetHandover();
+
+    const reopened = await harness();
+
+    assert.deepEqual(reopened.history().events, []);
+    await reopened.dispose();
+
+    const kept = JSON.parse(await readFile(join(dataDir, "dune", "history.json"), "utf8"));
+
+    assert.deepEqual(kept.events, []);
+    assert.deepEqual(kept.convs, {});
+});
+
+test("a hot reload prunes a history whose events expired, with no new activity", async (t) => {
+    const start = Date.now();
+    let now = start;
+
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    t.mock.method(Date, "now", () => now);
+
+    const town = await harness();
+
+    await town.meta("1", "Mine");
+    town.tool("t1", "1", "read", { path: "a.md" });
+    await town.dispose();
+
+    const historyFile = join(dataDir, "dune", "history.json");
+
+    /** The history file as it is on disk, or undefined while it is not there yet. */
+    const saved = async (): Promise<{ events: unknown[]; convs: object } | undefined> => {
+        try {
+            return JSON.parse(await readFile(historyFile, "utf8")) as {
+                events: unknown[];
+                convs: object;
+            };
+        } catch {
+            return undefined;
+        }
+    };
+
+    assert.equal((await saved())?.events.length, 1);
+
+    // A new version of the module, handed the state of the one before it, with nothing new.
+    const reloaded = await harness();
+
+    now = start + 25 * 60 * 60_000;
+    t.mock.timers.tick(60_000);
+    await until(async () => (await saved())?.events.length === 0);
+
+    const kept = await saved();
+
+    assert.deepEqual(kept?.events, []);
+    assert.deepEqual(kept?.convs, {});
+    await reloaded.dispose();
 });

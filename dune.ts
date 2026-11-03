@@ -1079,6 +1079,14 @@ export default async function createDune(host: Host, web: Web) {
         }
     }
 
+    /** Arm the one history timer. It marks the history for a save, so the prune runs even with nothing new. */
+    function armHistory() {
+        historyTimer ??= setTimeout(() => {
+            history.dirty = true;
+            saveHistory();
+        }, HISTORY_SAVE_MS);
+    }
+
     /**
      * Write the history, in the same chain as the world's saves: a later save never lands before an earlier one. It
      * writes only when something changed, or after a reset, which saves the empty history.
@@ -1183,8 +1191,10 @@ export default async function createDune(host: Host, web: Web) {
                         }
 
                         counted.add(key);
-                        convsSize += Buffer.byteLength(JSON.stringify(each));
-                        convsSize += convsCount > 0 ? 1 : 0;
+                        // Its key, its colon, its own bytes, and the comma before it.
+                        convsSize += Buffer.byteLength(JSON.stringify(key)) + 1;
+                        convsSize +=
+                            Buffer.byteLength(JSON.stringify(each)) + (convsCount > 0 ? 1 : 0);
                         convsCount++;
                     }
                 }
@@ -1232,11 +1242,7 @@ export default async function createDune(host: Host, web: Web) {
             // The history still holds events: look again in a minute, so what expires leaves memory and file even
             // when nothing new happens.
             if (!disposed && history.events.length > 0) {
-                historyTimer ??= setTimeout(() => {
-                    // A pass with nothing new still prunes: the timer marks the history for a save.
-                    history.dirty = true;
-                    saveHistory();
-                }, HISTORY_SAVE_MS);
+                armHistory();
             }
         });
 
@@ -2393,6 +2399,13 @@ export default async function createDune(host: Host, web: Web) {
 
         return { ok: true };
     });
+
+    // A history loaded from its file, or handed on by an older version, may hold events that expired while nothing
+    // ran: mark it for a save and arm the timer, so the prune at load reaches the file too.
+    if (history.events.length > 0 || Object.keys(history.convs).length > 0) {
+        history.dirty = true;
+        armHistory();
+    }
 
     web.client("dune");
 

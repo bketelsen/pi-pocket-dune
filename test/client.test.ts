@@ -349,3 +349,37 @@ test("a store without the focus session asks for the focus first", () => {
     // A focus that is not numeric but is in the world: no question about it either.
     assert.equal(question(null, convs, new Set(["2"])), null);
 });
+
+test("an empty world still asks for a missing focus session", () => {
+    // The automatic demo shows a desert of its own, so the page names no session of the server: only the focus
+    // session can be chosen, and its answer ends the demo.
+    const want = nextAsk({
+        convs: {},
+        unknown: new Map<string, number>(),
+        visible: [],
+        focus: "12",
+        asked: new Set<string>(),
+        askedAt: new Map<string, number>(),
+        askedTries: new Map<string, number>(),
+        retryAt: new Map<string, number>(),
+        now: 1000,
+    });
+
+    assert.equal(want, "12");
+
+    // No focus, or one the server cannot name: nothing to ask, so the demo runs on.
+    assert.equal(
+        nextAsk({
+            convs: {},
+            unknown: new Map<string, number>(),
+            visible: [],
+            focus: "human:Brian",
+            asked: new Set<string>(),
+            askedAt: new Map<string, number>(),
+            askedTries: new Map<string, number>(),
+            retryAt: new Map<string, number>(),
+            now: 1000,
+        }),
+        null,
+    );
+});

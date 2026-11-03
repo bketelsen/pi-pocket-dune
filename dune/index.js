@@ -867,15 +867,23 @@ export default function setup(pocket) {
             // Titles, and the sessions the server holds back until the owner's own request shows they may see them.
             const askMeta = () => {
                 // A night replay shows the past: its sessions are not the live ones to ask about.
-                if (asking || demoRef.current || !store.loaded || world.replay?.night) {
+                if (asking || !store.loaded || world.replay?.night) {
                     return;
                 }
 
+                // The demo shows work of its own. Only the focus session is still asked about there: a quiet one
+                // is not in the world, and the desert must show the session the owner looks at.
+                if (demoRef.current && !autoDemo) {
+                    return;
+                }
+
+                const showing = Boolean(demoRef.current);
                 const now = Date.now();
                 const want = nextAsk({
                     convs: store.convs,
-                    unknown: store.unknown,
-                    visible: world.visible,
+                    // The demo's sessions are not the server's: never ask about them.
+                    unknown: showing ? new Map() : store.unknown,
+                    visible: showing ? [] : world.visible,
                     focus,
                     asked,
                     askedAt,
@@ -911,6 +919,14 @@ export default function setup(pocket) {
                         store.humans = answer.humans ? table(answer.humans) : store.humans;
 
                         const added = insertEvents(store, answer.events ?? []).length;
+
+                        // The answer of a quiet focus session gives the automatic demo a real desert to go to.
+                        if (autoDemo && demoRef.current && Object.keys(store.convs).length > 0) {
+                            autoDemo = false;
+                            worldRef.current.stopDemo();
+
+                            return;
+                        }
 
                         // The demo has data of its own, and a replay shows the past: both take this when they end.
                         if (world.data !== store || world.replay) {
