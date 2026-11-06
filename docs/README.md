@@ -9,8 +9,8 @@ Docs are split by the question they answer:
 | [specs/](specs/)   | **What exactly** is the contract?    | Precise, testable interface definitions                                                                                                 |
 | [plans/](plans/)   | **When, in what order** do we build? | Plans and phases; updated as work lands                                                                                                 |
 
-The user documentation is [README.md](../README.md): what Arrakis shows, how to install and use it, what it reads,
-keeps and sends, and how it is built. The pictures in this folder (`*.webp`) belong to it.
+[README.md](../README.md) says what Arrakis is and how to install it. The user guide is [guide.md](guide.md). The
+pictures in this folder (`*.webp`) belong to the README and the guide.
 
 ## Index
 
@@ -23,15 +23,19 @@ keeps and sends, and how it is built. The pictures in this folder (`*.webp`) bel
 
 ### Design
 
-_(none yet: README.md, "How it is built")_
+- [overview.md](design/overview.md): the server module, the browser module, and what each file does
 
 ### Specs
 
-_(none yet: README.md, "What it reads, keeps, and sends")_
+- [what-it-reads-keeps-and-sends.md](specs/what-it-reads-keeps-and-sends.md): what the module reads, keeps and sends, and to whom
 
 ### Plans
 
 _(none yet)_
+
+### Guides
+
+- [guide.md](guide.md): the user guide: the page, what you see, every task is a work, the cast
 
 ## Conventions
 

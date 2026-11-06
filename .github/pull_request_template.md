@@ -29,7 +29,7 @@ Risk tier: 1 — <!-- justification -->
 <!-- Paste evidence for every applicable gate. -->
 
 - [ ] `make verify` green
-- [ ] README.md "What it reads, keeps, and sends" still matches the code (it records and shows only: no network, no change to a session)
+- [ ] `docs/specs/what-it-reads-keeps-and-sends.md` and the README's `Privacy` still match the code (it records and shows only: no network, no change to a session)
 - [ ] Revert test for a fix: the new test fails with the fix reverted; command: <!-- name it -->
 - [ ] Workflows changed: every action is SHA-pinned with `# vX.Y.Z`, `permissions: {}`, and `persist-credentials: false`
 - [ ] Blocking review point fixed: guard added and 1 `.memory/corrections.jsonl` line added
