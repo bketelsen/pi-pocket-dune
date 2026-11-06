@@ -1,7 +1,7 @@
 # Arrakis: a Dune desert of agents for Pi Pocket
 
-A Pi Pocket drop-in: every agent at work, shown as Arrakis. `README.md` says what it shows, how to install it, and what
-it reads, keeps and sends. The docs start at [docs/README.md](docs/README.md).
+A Pi Pocket drop-in: every agent at work, shown as Arrakis. `README.md` says what it is and how to install it; the docs start at
+[docs/README.md](docs/README.md): the user guide, the design, and the spec of what it reads, keeps and sends.
 
 This file (`AGENTS.md`) is the canonical agent instruction file. `CLAUDE.md`, `GEMINI.md`, `.cursorrules` and
 `.github/copilot-instructions.md` are relative symlinks to it, and `.claude/skills` is a symlink to `.agents/skills/`
@@ -25,11 +25,12 @@ There are none yet.
   is Pi Pocket's default for a route and a browser module with no `access` option (Pi Pocket's
   `docs/extensions/routes.md`), and `dune.ts` gives none; the test's mock does not enforce it, so never add an
   `access` option to a route or to `web.client` without a decision first.
-- **README is the contract.** The section "What it reads, keeps, and sends" in `README.md` states what the module
-  reads, keeps and sends. A change to any of those changes that section in the same PR.
+- **The spec is the contract.** [docs/specs/what-it-reads-keeps-and-sends.md](docs/specs/what-it-reads-keeps-and-sends.md)
+  states what the module reads, keeps and sends, and the README's `Privacy` section sums it up. A change to any of
+  those changes both in the same PR.
 - **Files.** `dune.ts` is the server module; `dune/` is the browser module (`index.js`, `world.js`, `model.js`,
   `cast.js`, `places.js`, `demo.js`, `sound.js`, `style.css`). `dev/` is the preview with no server; `docs/*.webp`
-  are the README's pictures. `_pocket.d.ts` is a copy of `types/pocket.d.ts` from Pi Pocket, for types only: update it
+  are the pictures of the README and the user guide. `_pocket.d.ts` is a copy of `types/pocket.d.ts` from Pi Pocket, for types only: update it
   by a copy, never by hand.
 - **Develop.** The checks use Pi Pocket's packages: `ln -s ../pi-pocket/node_modules node_modules` with a Pi Pocket
   checkout beside this folder. `npm run preview` serves `dev/preview.html` on `127.0.0.1:8765`.
@@ -83,7 +84,10 @@ from its category's `TEMPLATE.md`:
 - `docs/plans/`: order of work, with "Done when" outcomes.
 
 - A new doc gets a line in the index in [docs/README.md](docs/README.md); `make verify` fails on a doc under `docs/`
-  that the index does not link. The pictures in `docs/*.webp` belong to `README.md`.
+  that the index does not link. The pictures in `docs/*.webp` belong to `README.md` and `docs/guide.md`.
 - Cross-links go both ways: an ADR links the design docs and specs it shapes; a design doc links its ADRs and specs; a
   spec links its ADRs and design doc; a plan links what it builds. Use relative paths.
 - Write absolute dates, not relative ones.
+- When text moves out of `README.md` (core's README spec), every fact keeps a home, and the PR lists where each old
+  part went. A guarantee keeps its exact scope when it moves: "both saved files keep no words" is not "the module
+  keeps no words". Check each moved guarantee against `dune.ts`.
