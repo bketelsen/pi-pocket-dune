@@ -165,6 +165,7 @@ The checks use Pi Pocket's packages. With a Pi Pocket checkout beside this folde
 ln -s ../pi-pocket/node_modules node_modules
 npm run check    # TypeScript, and a syntax check of the browser module
 npm test         # the server module, the cast, and the model
+make verify      # all of the above checks, the format check, and the template gate (CI runs make ci)
 npm run preview  # then open http://127.0.0.1:8765/dev/preview.html: the page, on its demo, with no server
 ```
 

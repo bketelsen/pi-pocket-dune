@@ -1,0 +1,45 @@
+{
+    "schema_version": 1,
+    "paths": [
+        {
+            "glob": ".github/risk-paths.json",
+            "why": "governance: the high-risk path list"
+        },
+        {
+            "glob": ".github/workflows/**",
+            "why": "governance: CI, the risk-paths caller and token permissions"
+        },
+        {
+            "glob": "Makefile",
+            "why": "governance: the verify gate"
+        },
+        {
+            "glob": "scripts/check-template.mjs",
+            "why": "governance: the template verification gate"
+        },
+        {
+            "glob": "scripts/check-corrections.mjs",
+            "why": "governance: the corrections validation gate"
+        },
+        {
+            "glob": "scripts/lib/**",
+            "why": "governance: the vendored risk-path validator and matcher"
+        },
+        {
+            "glob": "mise.toml",
+            "why": "governance: the Node pin of the gate"
+        },
+        {
+            "glob": "mise.lock",
+            "why": "governance: the checksums of the Node pin"
+        },
+        {
+            "glob": "package.json",
+            "why": "governance: the check, test and format scripts that the gate runs"
+        },
+        {
+            "glob": "dune.ts",
+            "why": "secrets and credentials: reads every session's tool calls and model requests, masks secrets before it keeps text, and serves them on owner-only routes"
+        }
+    ]
+}
