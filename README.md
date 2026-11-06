@@ -10,7 +10,7 @@ messages fly by ornithopter.
 
 ![The demo desert: Odrade's order at work around the Arrakeen Citadel, with the Chronicle beside it](docs/desert.webp)
 
-**Status:** pre-release. It needs Pi Pocket 0.19.0 or later (extension API 2).
+**Status:** pre-release. It needs Pi Pocket 0.19.0 or later (extension API 2), and no outside service or setting.
 
 **Documentation:** [docs/README.md](docs/README.md)
 
@@ -46,7 +46,7 @@ Do not copy `test/`, `dev/`, `docs/`, `scripts/`, `package.json`, or `_pocket.d.
 - It masks what looks like a secret before it keeps any text. Masking is a best effort.
 - It shows what it reads only to the owner, and only for sessions that Pi Pocket confirms the owner may see.
 - It keeps events in memory and in `<data folder>/dune/` (file mode 0600), with a 24-hour history for the Night replay.
-- It sends nothing over the network and changes nothing: each hook only records.
+- It sends nothing over the network, makes no model calls of its own, and changes nothing: each hook only records.
 - The full contract: [what it reads, keeps, and sends](docs/specs/what-it-reads-keeps-and-sends.md).
 
 ## How it works
@@ -75,6 +75,8 @@ mise install     # the pinned Node
 make ci          # what CI runs: the template gate, check, tests, format check
 npm run preview  # then open http://127.0.0.1:8765/dev/preview.html: the page on its demo, with no server
 ```
+
+The full setup, each check, and CI: [docs/develop.md](docs/develop.md).
 
 ## Where to go next
 

@@ -88,3 +88,6 @@ from its category's `TEMPLATE.md`:
 - Cross-links go both ways: an ADR links the design docs and specs it shapes; a design doc links its ADRs and specs; a
   spec links its ADRs and design doc; a plan links what it builds. Use relative paths.
 - Write absolute dates, not relative ones.
+- When text moves out of `README.md` (core's README spec), every fact keeps a home, and the PR lists where each old
+  part went. A guarantee keeps its exact scope when it moves: "both saved files keep no words" is not "the module
+  keeps no words". Check each moved guarantee against `dune.ts`.

@@ -36,6 +36,7 @@ _(none yet)_
 ### Guides
 
 - [guide.md](guide.md): the user guide: the page, what you see, every task is a work, the cast
+- [develop.md](develop.md): the development guide: the setup, the checks, the preview, and CI
 
 ## Conventions
 

@@ -33,7 +33,9 @@ The same as Agent Civilization, whose server half this is:
 
 - Each hook only records, catches its own errors, returns `undefined`, and never waits.
 - The module makes no network call and no model call, and changes no session.
-- Text is masked before it is kept; a session that Pi Pocket has not confirmed keeps no words, paths, titles or names.
+- Text is masked before it is kept, in memory and on disk.
+- A session that Pi Pocket has not confirmed is not shown. Its masked events stay in memory, and both saved files
+  (`world.json`, `history.json`) keep no words, paths, titles or names for it.
 - The routes and the page are owner-only: Pi Pocket's default for a route and a browser module with no `access`
   option, which `dune.ts` does not give.
 
