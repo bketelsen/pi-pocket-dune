@@ -20,8 +20,11 @@ There are none yet.
   (`web.send`). Keep it so: a change that would read more, keep more, or send anything is a decision for Brian first.
 - **Privacy.** Text is masked (keys, tokens, `NAME=value` secrets, private keys) before it is kept. The routes and the
   page are owner-only, and a session shows only when Pi Pocket confirms that the owner may see it (its
-  `conversationRoute`). The files in `<data folder>/dune/` are written with mode 0600. `test/dune.test.ts` covers these
-  rules: keep it so when you touch them.
+  `conversationRoute`). The files in `<data folder>/dune/` are written with mode 0600. `test/dune.test.ts` covers the
+  masking, the hidden unconfirmed session, and the file mode: keep it so when you touch them. The owner-only access
+  is Pi Pocket's default for a route and a browser module with no `access` option (Pi Pocket's
+  `docs/extensions/routes.md`), and `dune.ts` gives none; the test's mock does not enforce it, so never add an
+  `access` option to a route or to `web.client` without a decision first.
 - **README is the contract.** The section "What it reads, keeps, and sends" in `README.md` states what the module
   reads, keeps and sends. A change to any of those changes that section in the same PR.
 - **Files.** `dune.ts` is the server module; `dune/` is the browser module (`index.js`, `world.js`, `model.js`,
