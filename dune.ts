@@ -20,7 +20,7 @@
  * It reads some internal shapes, which can change in any Pi Pocket release (they fail soft: the desert loses a link
  * or a label, never a call): the arguments and results of the built-in tools and of the owner's team tools
  * (`team_delegate`, `team_message`, `team_memory`, `team_sessions`), and the markers on messages (`[from: …]`,
- * `[subagent …]`, `[scheduled]`, `[via PR watch]`, `[night-shift]`, `[desk]`, and the linked-session wrapper).
+ * `[subagent …]`, `[scheduled]`, `[via PR watch]`, `[shift]` (and the older `[night-shift]`), `[desk]`, and the linked-session wrapper).
  *
  * It needs Pi Pocket 0.19.0 or later (extension API 2).
  */
@@ -1693,7 +1693,8 @@ export default async function createDune(host: Host, web: Web) {
             return;
         }
 
-        if (text.startsWith("[night-shift]")) {
+        // A shift's round starts with `[shift]`; older ones, from before its rename, with `[night-shift]`.
+        if (text.startsWith("[shift]") || text.startsWith("[night-shift]")) {
             emit("msg", { from: "station:night", to: id, via: "system", text: clip(text, 200) });
 
             return;

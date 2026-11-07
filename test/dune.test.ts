@@ -813,7 +813,7 @@ test("team_message goes to its session as a team message", async () => {
     await town.dispose();
 });
 
-test("the night shift and the desk send word from their stations", async () => {
+test("the shift and the desk send word from their stations", async () => {
     const town = await harness();
 
     await town.meta("1");
@@ -822,6 +822,7 @@ test("the night shift and the desk send word from their stations", async () => {
             messages: [
                 { role: "user", content: "[night-shift] run the nightly checks", timestamp: 1 },
                 { role: "user", content: "[desk] a new ticket came in", timestamp: 2 },
+                { role: "user", content: "[shift] Round 2 of 20: tidy up", timestamp: 3 },
             ],
         },
         town.api("1"),
@@ -837,6 +838,16 @@ test("the night shift and the desk send word from their stations", async () => {
                 event.to === "1" &&
                 event.via === "system" &&
                 event.text === "[night-shift] run the nightly checks",
+        ),
+    );
+    // A shift's round since its rename: the same station as the older [night-shift].
+    assert.ok(
+        messages.some(
+            (event) =>
+                event.from === "station:night" &&
+                event.to === "1" &&
+                event.via === "system" &&
+                event.text === "[shift] Round 2 of 20: tidy up",
         ),
     );
     assert.ok(

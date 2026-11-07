@@ -45,7 +45,7 @@ The same as Agent Civilization, whose server half this is:
 It reads some shapes that are internal to Pi Pocket or to other extensions, and that can change in any release: the
 arguments and results of the built-in tools, the markers Pi Pocket puts on messages (`[from: …]`, `[subagent …]`,
 `[scheduled]`, `[via PR watch]`, the linked-session wrapper), and the team extension's tools (`team_delegate`,
-`team_message`, its "Task from the source session:" preamble) and markers (`[night-shift]`, `[desk]`). If one
+`team_message`, its "Task from the source session:" preamble) and markers (`[shift]`, the older `[night-shift]`, `[desk]`). If one
 changes, the desert fails soft: it loses a link, a label, or a work, never a call.
 
 ## References
