@@ -4,11 +4,106 @@ import test from "node:test";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
 import { castOf, lookup, titleName } from "../dune/cast.js";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
-import { nextAsk } from "../dune/index.js";
+import setup, { nextAsk } from "../dune/index.js";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
 import { Desert, nightWindow, partOf, recentIds, styleOf, titleOf } from "../dune/model.js";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
 import { placeDef } from "../dune/places.js";
+
+test("Desert.isBusy characterizes the rule for an agent at work", () => {
+    const desert = new Desert();
+    const now = 1_000_000;
+
+    assert.equal(desert.isBusy("none", now), false);
+
+    desert.busy.set("tool", { k: "tool", at: now });
+    desert.busy.set("think", { k: "think", at: now });
+    desert.busy.set("done", { k: "done", at: now });
+    desert.busy.set("idle", { k: "idle", at: now });
+    desert.busy.set("reply-zero", { k: "reply", at: now, calls: 0 });
+    desert.busy.set("reply-none", { k: "reply", at: now });
+    desert.busy.set("reply-one", { k: "reply", at: now, calls: 1 });
+    desert.busy.set("exact", { k: "tool", at: now - 10 * 60_000 });
+    desert.busy.set("under", { k: "tool", at: now - (10 * 60_000 - 1) });
+
+    assert.equal(desert.isBusy("tool", now), true);
+    assert.equal(desert.isBusy("think", now), true);
+    assert.equal(desert.isBusy("done", now), true);
+    assert.equal(desert.isBusy("idle", now), false);
+    assert.equal(desert.isBusy("reply-zero", now), false);
+    assert.equal(desert.isBusy("reply-none", now), false);
+    assert.equal(desert.isBusy("reply-one", now), true);
+    assert.equal(desert.isBusy("exact", now), false);
+    assert.equal(desert.isBusy("under", now), true);
+});
+
+test("the rail badge counts only sessions at work", (t) => {
+    const FIXED = 1_800_000_000_000;
+
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    t.mock.method(Date, "now", () => FIXED);
+
+    const handlers = new Map<string, (arg: unknown) => unknown>();
+    const railUpdates: { badge: number | null }[] = [];
+    let dispose: (() => unknown) | undefined;
+
+    const pocket = {
+        html: (strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }),
+        useEffect: () => undefined,
+        useRef: (value: unknown) => ({ current: value }),
+        useState: (value: unknown) => [
+            typeof value === "function" ? value() : value,
+            () => undefined,
+        ],
+        style: () => undefined,
+        rail: () => ({
+            update: (arg: { badge: number | null }) => {
+                railUpdates.push(arg);
+            },
+        }),
+        launcher: () => undefined,
+        onDispose: (fn: () => unknown) => {
+            dispose = fn;
+        },
+        on: (name: string, fn: (arg: unknown) => unknown) => {
+            handlers.set(name, fn);
+        },
+        page: () => undefined,
+        api: () => Promise.resolve({}),
+    };
+
+    setup(pocket);
+
+    handlers.get("batch")!({
+        n: 1,
+        events: [
+            { id: 1, at: FIXED, k: "tool", c: "tool-session" },
+            { id: 2, at: FIXED, k: "think", c: "think-session" },
+            { id: 3, at: FIXED, k: "idle", c: "idle-session" },
+            { id: 4, at: FIXED, k: "reply", c: "reply-zero", calls: 0 },
+            { id: 5, at: FIXED, k: "reply", c: "reply-two", calls: 2 },
+            { id: 6, at: FIXED - 11 * 60_000, k: "tool", c: "old-session" },
+        ],
+    });
+
+    assert.deepEqual(railUpdates.at(-1), { badge: 3 });
+
+    handlers.get("batch")!({
+        n: 2,
+        events: [
+            { id: 7, at: FIXED, k: "idle", c: "tool-session" },
+            { id: 8, at: FIXED, k: "idle", c: "think-session" },
+            { id: 9, at: FIXED, k: "idle", c: "idle-session" },
+            { id: 10, at: FIXED, k: "idle", c: "reply-zero" },
+            { id: 11, at: FIXED, k: "idle", c: "reply-two" },
+            { id: 12, at: FIXED, k: "idle", c: "old-session" },
+        ],
+    });
+
+    assert.deepEqual(railUpdates.at(-1), { badge: null });
+
+    dispose?.();
+});
 
 test("a session's title names its agent", () => {
     assert.equal(titleName("Duncan Idaho: pilothouse CI fixes"), "Duncan Idaho");
