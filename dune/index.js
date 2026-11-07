@@ -3,7 +3,7 @@
 
 import { FACTIONS, SAYINGS, helperWord } from "./cast.js";
 import { Demo } from "./demo.js";
-import { fmt, nightWindow, solaris } from "./model.js";
+import { atWork, fmt, nightWindow, solaris } from "./model.js";
 import { PLACES } from "./places.js";
 import { Sound } from "./sound.js";
 import { World, portraitURL } from "./world.js";
@@ -261,11 +261,7 @@ export default function setup(pocket) {
         let count = 0;
 
         for (const event of activity.values()) {
-            if (
-                now - event.at < 10 * 60_000 &&
-                event.k !== "idle" &&
-                !(event.k === "reply" && !event.calls)
-            ) {
+            if (atWork(event, now)) {
                 count++;
             }
         }

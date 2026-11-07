@@ -210,6 +210,16 @@ export function solaris(cost) {
     return value < 0.01 ? `${(value * 100).toFixed(2)}¢ ◈` : `$${value.toFixed(2)} ◈`;
 }
 
+/** Whether a last event shows an agent at work. */
+export function atWork(last, now) {
+    return Boolean(
+        last &&
+        now - last.at < 10 * 60_000 &&
+        last.k !== "idle" &&
+        !(last.k === "reply" && !last.calls),
+    );
+}
+
 export class Desert {
     constructor() {
         this.reset({});
@@ -632,14 +642,7 @@ export class Desert {
 
     /** Whether an agent works now: its last event is recent, and is not the end of a turn. */
     isBusy(id, now) {
-        const last = this.busy.get(id);
-
-        return Boolean(
-            last &&
-            now - last.at < 10 * 60_000 &&
-            last.k !== "idle" &&
-            !(last.k === "reply" && !last.calls),
-        );
+        return atWork(this.busy.get(id), now);
     }
 }
 
