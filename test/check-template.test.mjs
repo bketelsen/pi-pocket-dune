@@ -241,6 +241,48 @@ test("risk-path list with no caller glob exits 1", (t) => {
   assertFailure(run(root), "risk-paths");
 });
 
+test("version 2 risk-path list with the caller and the list at L2 exits 0", (t) => {
+  const root = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".github", "risk-paths.json"), JSON.stringify({
+    schema_version: 2,
+    default_level: "L3",
+    paths: [
+      { glob: ".github/risk-paths.json", level: "L2", why: "governance: the high-risk path list" },
+      { glob: ".github/workflows/**", level: "L2", why: "governance: CI and the caller workflow" },
+      { glob: "docs/**", level: "L4", why: "documentation" },
+    ],
+  }, null, 4) + "\n", "utf8");
+  assertClean(run(root));
+});
+
+test("version 2 risk-path list whose list glob is L3 exits 1", (t) => {
+  const root = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".github", "risk-paths.json"), JSON.stringify({
+    schema_version: 2,
+    default_level: "L3",
+    paths: [
+      { glob: ".github/risk-paths.json", level: "L3", why: "governance: the high-risk path list" },
+      { glob: ".github/workflows/**", level: "L2", why: "governance: CI and the caller workflow" },
+    ],
+  }, null, 4) + "\n", "utf8");
+  assertFailure(run(root), "must be L1 or L2");
+});
+
+test("version 1 risk-path list still exits 0", (t) => {
+  const root = fixture();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".github", "risk-paths.json"), JSON.stringify({
+    schema_version: 1,
+    paths: [
+      { glob: ".github/risk-paths.json", why: "governance: the high-risk path list" },
+      { glob: ".github/workflows/**", why: "governance: CI and the caller workflow" },
+    ],
+  }, null, 4) + "\n", "utf8");
+  assertClean(run(root));
+});
+
 test("correction with a sixth field exits 1", (t) => {
   const root = fixture();
   t.after(() => rmSync(root, { recursive: true, force: true }));
