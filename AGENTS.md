@@ -49,15 +49,21 @@ fixes it also adds a guard: a targeted test that fails without the fix (preferre
 can catch it. The same PR appends 1 line to `.memory/corrections.jsonl` (`evidence`: the PR and the review;
 `promoted_to`: the test or the rule). See `.memory/README.md`.
 
-**Risk paths.** `.github/risk-paths.json` lists the high-risk paths; a PR that touches one gets `risk:high` from
-`.github/workflows/risk-paths.yml` and declares tier 3. Add a path when you add a file of that kind (signing, auth,
-publication, secrets, destructive operations, CI).
+**Risk paths.** `.github/risk-paths.json` lists the high-risk paths. The list is version 2: each glob has a level,
+`L1` to `L4`, and the default level is `L3` ([frostyard/core ADR-0078](https://github.com/frostyard/core/blob/main/docs/adr/0078-sort-pull-requests-by-levels-l1-to-l4.md)).
+The caller `.github/workflows/risk-paths.yml` runs core's `pr-triage.yml`, which adds 1 label `level:L1` to `level:L4`
+(when those labels exist) and `risk:high` at `L1` and `L2`. It also removes `ready-for-human` when the head moves after
+the label, or when CI was not green when the label came
+([ADR-0077](https://github.com/frostyard/core/blob/main/docs/adr/0077-bind-ready-for-human-to-the-head-commit.md), ADR-0078).
+A PR with `risk:high` declares tier 3. Add a path when you add a file of that kind (signing, auth, publication,
+secrets, destructive operations, CI), with the strictest level it deserves.
 
 **Vendored files.** `scripts/lib/risk-paths.mjs` and `scripts/check-corrections.mjs` are copies from frostyard/core;
 never edit them by hand (`make verify` checks their hashes). `scripts/check-template.mjs` and
 `test/check-template.test.mjs` are copies from bketelsen/agentic-template.
 
-**Labels.** Issues are in GitHub Issues. The labels the team uses: `ready-for-human`, `risk:high` and `sweep`.
+**Labels.** Issues are in GitHub Issues. The labels the team uses: `ready-for-human`, `risk:high`, `level:L1` to
+`level:L4` and `sweep`.
 
 ## Releases and installs
 
