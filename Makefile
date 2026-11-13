@@ -21,6 +21,6 @@ verify: verify-template
 ## check: the developer gate: the same as verify (the repository has no format command)
 check: verify
 
-## ci: the gate CI runs: verify, then, with BASE set, the append-only check of .memory/corrections.jsonl
+## ci: the gate CI runs: verify, then, with BASE set, the check of .memory/corrections/ against the base
 ci: verify
 	@if [ -n "$(BASE)" ]; then node scripts/check-corrections.mjs --base "$(BASE)"; fi
