@@ -17,7 +17,7 @@ mise install     # Node, pinned in mise.toml and mise.lock (run mise trust once 
 
 ```sh
 make verify                # the template gate and its tests, npm run check, npm test, npm run format:check
-make ci BASE=origin/main   # verify, then the append-only check of .memory/corrections.jsonl against the base
+make ci BASE=origin/main   # verify, then the check of the records in .memory/corrections/ against the base
 ```
 
 - `npm run check`: TypeScript (`tsc --noEmit`), and `node --check` of each `dune/*.js`.

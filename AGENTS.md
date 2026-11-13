@@ -39,9 +39,10 @@ There are none yet.
   checkout beside this folder. `npm run preview` serves `dev/preview.html` on `127.0.0.1:8765`.
 - **Gate.** Run `make verify` before you call a change done. It runs the template gate (`node scripts/check-template.mjs`
   and `node --test test/*.test.mjs`), then `npm run check` (TypeScript, and `node --check` of `dune/*.js`), `npm test`
-  and `npm run format:check`. CI job `Check` runs `make ci`, which also checks that `.memory/corrections.jsonl` is
-  append-only against the PR base; run `make ci BASE=origin/main` for the same check locally. `mise.toml` and
-  `mise.lock` pin Node.
+  and `npm run format:check`. CI job `Check` runs `make ci`, which also checks the correction records under
+  `.memory/corrections/` against the PR base: no record removed or renamed, only an empty `promoted_to` filled, and the
+  old single corrections file does not come back. Run `make ci BASE=origin/main` for the same check locally.
+  `mise.toml` and `mise.lock` pin Node.
 
 **Test reliability.** No sleeps for timing (wait on a condition or inject a clock). No network and no wall clock in
 unit tests (inject them). A flaky test gets an issue, then a fix or a quarantine (skip with the issue link) in the
@@ -49,8 +50,9 @@ same PR. Never retry a job or a test until it is green.
 
 **Blocker to guard.** When a review (agent cross-review, owner review, or a human) finds a blocking point, the PR that
 fixes it also adds a guard: a targeted test that fails without the fix (preferred), or an `AGENTS.md` rule when no test
-can catch it. The same PR appends 1 line to `.memory/corrections.jsonl` (`evidence`: the PR and the review;
-`promoted_to`: the test or the rule). See `.memory/README.md`.
+can catch it. The same PR adds 1 record file under `.memory/corrections/` (name `<date>-pr-<N>-<words>.json`;
+`evidence`: the PR and the review; `promoted_to`: the test or the rule; frostyard/core ADR-0081). See
+`.memory/README.md`.
 
 **Risk paths.** `.github/risk-paths.json` lists the high-risk paths. The list is version 2: each glob has a level,
 `L1` to `L4`, and the default level is `L3` ([frostyard/core ADR-0078](https://github.com/frostyard/core/blob/main/docs/adr/0078-sort-pull-requests-by-levels-l1-to-l4.md)).
