@@ -12,14 +12,17 @@ The same as Agent Civilization, whose server half this is:
 - **Reads**, through its hooks, every tool call and model request in **every** session: the tool's name and its
   arguments, the model, token counts and cost, the start of each message and answer, the end of the model's
   reasoning, and the text of failed tool calls and model errors, all cut short. It reads no files, settings, sign-ins,
-  or environment variables, and no session documents, except through the `meta` route below.
+  or environment variables, and no session documents (the `meta` route below hands a document reader to the team
+  extension).
 - **Reads**, through its `meta` conversation route, which the owner's page calls for 1 session and which Pi Pocket
   answers only when the owner may see that session: the session's title, working folder, model and thinking level;
   the titles of the sessions linked to it (`request.linkedSessions.list()`); and its persona's name, when the team
-  extension is installed. For the persona, it gives the team extension's `persona` function a reader of that session's
-  documents (`request.snapshot`), as the owner's own request; the team extension reads the session's identity document,
-  and the module keeps only the name it returns. Titles and the name are masked and cut to 60 characters, the folder
-  to 200.
+  extension is installed. The module itself reads no session document. For the persona, it gives the team extension's
+  `persona` function a reader of that session's documents (`request.snapshot`), as the owner's own request. What that
+  function reads belongs to the team extension: in its version of 2026-11-13, the session's identity and agent
+  documents and, when the session has no persona of its own, the team's profile files, to find a persona by the
+  session's working folder. The module keeps only the persona name it returns. Titles and the name are masked and cut
+  to 60 characters, the folder to 200.
 - **Masks** what looks like a secret before it keeps any text: API keys and tokens, `NAME=value` settings whose name
   says key, token, secret, or password, and private keys. Masking is a best effort.
 - **Shows** what it reads only to the owner (its routes and page are owner-only), and only for sessions that Pi Pocket

@@ -28,7 +28,9 @@ There are none yet.
   `access` option to a route or to `web.client` without a decision first.
 - **The spec is the contract.** [docs/specs/what-it-reads-keeps-and-sends.md](docs/specs/what-it-reads-keeps-and-sends.md)
   states what the module reads, keeps and sends, and the README's `Privacy` section sums it up. A change to any of
-  those changes both in the same PR.
+  those changes both in the same PR. When the module hands a reader to another extension (the `meta` route gives the
+  team extension's `persona` function `request.snapshot`), the spec and the README also name what that extension
+  reads with it: check that extension's code, not only `dune.ts`.
 - **Files.** `dune.ts` is the server module; `dune/` is the browser module (`index.js`, `world.js`, `model.js`,
   `cast.js`, `places.js`, `demo.js`, `sound.js`, `style.css`). `dev/` is the preview with no server; `docs/*.webp`
   are the pictures of the README and the user guide. `_pocket.d.ts` is a copy of `types/pocket.d.ts` from the Pi
