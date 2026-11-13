@@ -23,7 +23,14 @@ function forgetHandover() {
     delete (globalThis as Record<symbol, unknown>)[Symbol.for("x.dune.state")];
 }
 
+/** Every harness a test made: a test whose assertion fails before its own dispose is disposed here, so the run ends. */
+const open: (() => Promise<void>)[] = [];
+
 afterEach(async () => {
+    for (const dispose of open.splice(0)) {
+        await dispose();
+    }
+
     await rm(dataDir, { recursive: true, force: true });
 });
 
@@ -91,18 +98,25 @@ async function harness() {
             convs: Record<string, { title?: string; tools?: unknown }>;
             events: Record<string, unknown>[];
         };
-    const meta = (id: string, title = "A session") =>
+    const meta = (
+        id: string,
+        title = "A session",
+        linked: { conversationId: string; title?: string }[] = [],
+    ) =>
         routes.get("GET meta/:source")!({
             conversation: { id, title, cwd: "/work" },
-            linkedSessions: { list: async () => [] },
+            linkedSessions: { list: async () => linked },
             snapshot: async () => undefined,
             context: {},
         }) as Promise<{ events: unknown[] }>;
+    // Once only: the test's own call, or else the one in afterEach.
     const dispose = async () => {
-        for (const run of disposers) {
+        for (const run of disposers.splice(0)) {
             await run();
         }
     };
+
+    open.push(dispose);
 
     return {
         extension,
@@ -219,6 +233,7 @@ test("the file on disk keeps no words, paths, or titles of an unconfirmed sessio
 
     assert.ok(!JSON.stringify(saved).includes("private.txt"));
     assert.ok(JSON.stringify(saved).includes("readme.md"));
+    assert.equal((await stat(join(dataDir, "dune", "world.json"))).mode & 0o777, 0o600);
 });
 
 test("a subagent's name goes in its own field, never where a session id belongs", async () => {
@@ -417,6 +432,71 @@ test("what looks like a secret is masked before it is kept", async () => {
         assert.ok(!kept.includes(secret), `${secret} was kept`);
     }
 
+    await town.dispose();
+});
+
+test("a conversation's title is masked and cut before it is kept", async () => {
+    const town = await harness();
+    const secret = "sk-abcdefghijklmnopqrstuvwxyz0123456789";
+    const title = `deploy with OPENAI_API_KEY=${secret} and then tell everyone about it`;
+
+    await town.meta("7", title);
+
+    const kept = (town.world().convs["7"] as { title?: string }).title;
+
+    assert.ok(kept, "the title is kept");
+    assert.ok(!kept.includes(secret), "the secret was kept in the title");
+    assert.ok(kept.length <= 60, `the title is ${kept.length} characters`);
+
+    await town.dispose();
+
+    const saved = JSON.parse(await readFile(join(dataDir, "dune", "world.json"), "utf8"));
+    const onDisk = saved.convs["7"].title as string;
+
+    assert.ok(!onDisk.includes(secret), "the secret was saved in the title");
+    assert.ok(onDisk.length <= 60, `the saved title is ${onDisk.length} characters`);
+    assert.equal((await stat(join(dataDir, "dune", "world.json"))).mode & 0o777, 0o600);
+});
+
+test("a linked session's title is masked before it is kept", async () => {
+    const town = await harness();
+    const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
+    const title = `linked work with token ${secret} and many more words after that`;
+
+    // The linked session is one the owner may see already.
+    town.tool("t1", "2", "read", { path: "/work/notes.md" });
+    await town.meta("2", "Linked session");
+
+    await town.meta("1", "Mine", [{ conversationId: "2", title }]);
+
+    const kept = (town.world().convs["2"] as { title?: string }).title;
+
+    assert.ok(kept, "its title is kept");
+    assert.ok(!kept.includes(secret), "the secret was kept in the linked title");
+    assert.ok(kept.length <= 60, `the linked title is ${kept.length} characters`);
+    await town.dispose();
+});
+
+test("a stop message masks the name it carries", async () => {
+    const town = await harness();
+    const secret = "sk-abcdefghijklmnopqrstuvwxyz0123456789";
+    const name = `reviewer ${secret}`;
+
+    await town.meta("1");
+    town.handlers.afterTool!(
+        { id: "spawn", name: "subagent", arguments: { action: "stop", name } },
+        {
+            isError: false,
+            output: [],
+            details: { conversationId: "2", name, action: "stop" },
+        },
+        town.api("1"),
+    );
+
+    const event = town.world().events.find((each) => each.via === "stop");
+
+    assert.ok(event, "the stop shows");
+    assert.ok(!String(event.text).includes(secret), "the secret was kept in the stop message");
     await town.dispose();
 });
 

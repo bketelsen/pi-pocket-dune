@@ -37,5 +37,6 @@ The page runs on its demo, with no server (`dev/pocket-shim.js` stands in for Pi
 
 ## CI
 
-The job `Check` in `.github/workflows/ci.yml` clones Pi Pocket at tag `v0.27.0`, runs `npm ci` there, links its
+The job `Check` in `.github/workflows/ci.yml` clones the fork bketelsen/pi-pocket at tag `v0.28.1-bk.1` (the server's
+release), checks that the clone is the tag's pinned commit, runs `npm ci` there, links its
 `node_modules`, and runs `make ci` with the PR base.

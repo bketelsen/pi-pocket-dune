@@ -15,9 +15,10 @@ There are none yet.
 ## Code conventions
 
 - **It records and shows only.** The module reads through its hooks (`beforeTool`, `afterTool`, `beforeRequest`,
-  `afterResponse`, `onYield`), and each hook only records, catches its own errors, returns `undefined`, and never
-  waits. It makes no network call, no model call, and no change to a session. It sends only to the owner's open tabs
-  (`web.send`). Keep it so: a change that would read more, keep more, or send anything is a decision for Brian first.
+  `afterResponse`, `onYield`) and its `meta` route (the spec lists what that route reads). Each hook only records,
+  catches its own errors, returns `undefined`, and never waits. It makes no network call, no model call, and no
+  change to a session. It sends only to the owner's open tabs (`web.send`). Keep it so: a change that would read more,
+  keep more, or send anything is a decision for Brian first.
 - **Privacy.** Text is masked (keys, tokens, `NAME=value` secrets, private keys) before it is kept. The routes and the
   page are owner-only, and a session shows only when Pi Pocket confirms that the owner may see it (its
   `conversationRoute`). The files in `<data folder>/dune/` are written with mode 0600. `test/dune.test.ts` covers the
@@ -30,8 +31,8 @@ There are none yet.
   those changes both in the same PR.
 - **Files.** `dune.ts` is the server module; `dune/` is the browser module (`index.js`, `world.js`, `model.js`,
   `cast.js`, `places.js`, `demo.js`, `sound.js`, `style.css`). `dev/` is the preview with no server; `docs/*.webp`
-  are the pictures of the README and the user guide. `_pocket.d.ts` is a copy of `types/pocket.d.ts` from Pi Pocket, for types only: update it
-  by a copy, never by hand.
+  are the pictures of the README and the user guide. `_pocket.d.ts` is a copy of `types/pocket.d.ts` from the Pi
+  Pocket release that CI clones, for types only: update it by a copy, never by hand, when CI moves to a new release.
 - **Develop.** The checks use Pi Pocket's packages: `ln -s ../pi-pocket/node_modules node_modules` with a Pi Pocket
   checkout beside this folder. `npm run preview` serves `dev/preview.html` on `127.0.0.1:8765`.
 - **Gate.** Run `make verify` before you call a change done. It runs the template gate (`node scripts/check-template.mjs`
@@ -71,8 +72,9 @@ never edit them by hand (`make verify` checks their hashes). `scripts/check-temp
 - An install is a copy: `dune.ts` and `dune/` go into `~/.pi-pocket/extensions/` (README "Install"); `test/`, `dev/`,
   `docs/`, `package.json` and `_pocket.d.ts` do not. Brian installs it and turns it on in Menu → Extensions; agents
   never install, enable or restart.
-- Internal dependency: Pi Pocket (bketelsen/pi-pocket, upstream TannerMidd/pi-pocket). CI clones it at tag `v0.27.0`
-  (`.github/workflows/ci.yml`): move that tag when the server moves to a new Pi Pocket release. README names the
+- Internal dependency: Pi Pocket (bketelsen/pi-pocket, upstream TannerMidd/pi-pocket). CI clones the fork at tag
+  `v0.28.1-bk.1`, the server's release, and checks the tag's commit (`.github/workflows/ci.yml`): move the tag, the
+  commit and `_pocket.d.ts` together when the server moves to a new Pi Pocket release. README names the
   oldest Pi Pocket that works (0.19.0, extension API 2).
 - Dune and its characters belong to the estate of Frank Herbert; this is an unofficial fan work. The server module is
   adapted from Agent Civilization (MIT); keep its notice in `LICENSE` and the README.

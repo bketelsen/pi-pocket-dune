@@ -11,7 +11,7 @@
     },
     "scripts": {
         "check": "tsc --noEmit -p tsconfig.json && for f in dune/*.js; do node --check \"$f\" || exit 1; done",
-        "test": "node --test test/*.test.ts",
+        "test": "node --test --test-timeout=30000 test/*.test.ts",
         "preview": "python3 -m http.server 8765 --bind 127.0.0.1",
         "format:check": "prettier --check --tab-width 4 --print-width 100 dune.ts dune/*.js dune/style.css test/*.ts README.md package.json"
     },
