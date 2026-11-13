@@ -1906,7 +1906,7 @@ export default async function createDune(host: Host, web: Web) {
                             from: id,
                             to: child,
                             via: "stop",
-                            text: `stop ${details.name}`,
+                            text: `stop ${clip(details.name, 60)}`,
                         });
                     } else if (mine?.delivered === undefined && typeof args.message === "string") {
                         emit("msg", {
@@ -2297,8 +2297,13 @@ export default async function createDune(host: Host, web: Web) {
             const here = conv(id, false);
 
             verified.add(id);
-            here.title = request.conversation.title || here.title;
-            here.cwd = request.conversation.cwd || here.cwd;
+            if (typeof request.conversation.title === "string" && request.conversation.title) {
+                here.title = clip(request.conversation.title, 60);
+            }
+
+            if (typeof request.conversation.cwd === "string" && request.conversation.cwd) {
+                here.cwd = clip(request.conversation.cwd, 200);
+            }
 
             if (request.conversation.model) {
                 here.provider = request.conversation.model.provider;
@@ -2316,7 +2321,7 @@ export default async function createDune(host: Host, web: Web) {
                 const other = world.convs[String(each.conversationId)];
 
                 if (other !== undefined && each.title) {
-                    other.title = each.title;
+                    other.title = clip(each.title, 60);
                     changed.convs.add(other.id);
                 }
             }

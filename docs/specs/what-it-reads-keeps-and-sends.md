@@ -12,7 +12,17 @@ The same as Agent Civilization, whose server half this is:
 - **Reads**, through its hooks, every tool call and model request in **every** session: the tool's name and its
   arguments, the model, token counts and cost, the start of each message and answer, the end of the model's
   reasoning, and the text of failed tool calls and model errors, all cut short. It reads no files, settings, sign-ins,
-  or environment variables, and no session documents.
+  or environment variables, and no session documents (the `meta` route below hands a document reader to the team
+  extension).
+- **Reads**, through its `meta` conversation route, which the owner's page calls for 1 session and which Pi Pocket
+  answers only when the owner may see that session: the session's title, working folder, model and thinking level;
+  the titles of the sessions linked to it (`request.linkedSessions.list()`); and its persona's name, when the team
+  extension is installed. The module itself reads no session document. For the persona, it gives the team extension's
+  `persona` function a reader of that session's documents (`request.snapshot`), as the owner's own request. What that
+  function reads belongs to the team extension: in its version of 2026-11-13, the session's identity and agent
+  documents and, when the session has no persona of its own, the team's profile files, to find a persona by the
+  session's working folder. The module keeps only the persona name it returns. Titles and the name are masked and cut
+  to 60 characters, the folder to 200.
 - **Masks** what looks like a secret before it keeps any text: API keys and tokens, `NAME=value` settings whose name
   says key, token, secret, or password, and private keys. Masking is a best effort.
 - **Shows** what it reads only to the owner (its routes and page are owner-only), and only for sessions that Pi Pocket
@@ -23,7 +33,10 @@ The same as Agent Civilization, whose server half this is:
   Night replay: only the tool calls and their results, messages, links, and the ends of turns, with labels cut to 60
   characters and messages to 80, no error text, no thoughts, and no answers. It keeps at most 40,000 such events, and
   saves them once a minute to `<data folder>/dune/history.json` (file mode 0600, 4 MB at most: the oldest go first).
-  For a session not yet confirmed, both files keep no words, paths, titles, or names. **Glossary → Forget all
+  For a session not yet confirmed, both files keep no words, paths, titles, or names. For a confirmed session,
+  `world.json` keeps its title, folder, model and persona name from the `meta` route. `world.json` also keeps the ids
+  of the confirmed sessions, so they stay confirmed after a restart, and the keys of the most recent hook calls (ids
+  and counts, no text), so a hook that runs again after a restart counts nothing twice. **Glossary → Forget all
   history** clears it all. After you uninstall it, delete the `dune` folder in the data folder too.
 - **Sends** nothing over the network: only the town, to the owner's open Pi Pocket tabs (`web.send`). In the browser
   it keeps a few view choices in `localStorage`, under `x.dune.*`.

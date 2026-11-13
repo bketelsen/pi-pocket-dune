@@ -42,10 +42,14 @@ Do not copy `test/`, `dev/`, `docs/`, `scripts/`, `package.json`, or `_pocket.d.
 ## Privacy
 
 - It reads every tool call and model request in every session, cut short; no files, settings, sign-ins or session
-  documents.
+  documents of its own. For a session the owner may see, it also reads its title, folder, model, linked sessions'
+  titles and persona name. It asks the team extension for the persona name, and that extension reads the session's
+  identity and agent documents, and the team's profile files when the session has no persona of its own. The module
+  keeps only the name.
 - It masks what looks like a secret before it keeps any text. Masking is a best effort.
 - It shows what it reads only to the owner, and only for sessions that Pi Pocket confirms the owner may see.
-- It keeps events in memory and in `<data folder>/dune/` (file mode 0600), with a 24-hour history for the Night replay.
+- It keeps events in memory and in `<data folder>/dune/` (file mode 0600), with a 24-hour history for the Night replay,
+  and the ids of the confirmed sessions with their titles and folders.
 - It sends nothing over the network, makes no model calls of its own, and changes nothing: each hook only records.
 - The full contract: [what it reads, keeps, and sends](docs/specs/what-it-reads-keeps-and-sends.md).
 

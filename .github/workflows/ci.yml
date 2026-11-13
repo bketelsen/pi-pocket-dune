@@ -1,7 +1,8 @@
 # The checks use Pi Pocket's packages, as the README's "Develop" section says: node_modules is a link to a Pi Pocket
-# checkout's. Here we clone the public Pi Pocket repository at tag v0.27.0 (the release the team's server runs) into
-# the runner's temporary folder, install its dependencies, and link them.
-# Then the job runs the gate, make ci. Actions are pinned by commit SHA, and the token can only read (frostyard/core ADR-0021).
+# checkout's. Here we clone the fork bketelsen/pi-pocket at tag v0.28.1-bk.1 (the release the team's server runs:
+# upstream v0.28.1 plus the fork's patches) into the runner's temporary folder, install its dependencies, and link
+# them. A tag can move, so the step checks the tag's commit as well. Then the job runs the gate, make ci. Actions are
+# pinned by commit SHA, and the token can only read (frostyard/core ADR-0021).
 name: CI
 
 on:
@@ -38,8 +39,15 @@ jobs:
                   install_args: node
                   cache: true
 
-            - name: Clone Pi Pocket v0.27.0
-              run: git clone --depth 1 --branch v0.27.0 https://github.com/TannerMidd/pi-pocket.git "$RUNNER_TEMP/pi-pocket"
+            - name: Clone Pi Pocket v0.28.1-bk.1 from bketelsen/pi-pocket
+              env:
+                  REPOSITORY: bketelsen/pi-pocket
+                  REF: v0.28.1-bk.1
+                  COMMIT: 7891d67bb0179f1c13aad6a15014fba7d8f4ddf5
+              run: |
+                  git clone --depth 1 --branch "$REF" "https://github.com/$REPOSITORY.git" "$RUNNER_TEMP/pi-pocket"
+                  # A tag can move: the job tests only the commit pinned here.
+                  test "$(git -C "$RUNNER_TEMP/pi-pocket" rev-parse HEAD)" = "$COMMIT"
 
             - name: Install Pi Pocket dependencies
               working-directory: ${{ runner.temp }}/pi-pocket
