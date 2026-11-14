@@ -278,3 +278,48 @@ test("the open task's name sits under the sietch's title, only close up", (t) =>
         }
     }
 });
+
+test("a replay counts its own tool calls in calls/minute, each 1 time", (t) => {
+    const FIXED = 1_800_000_000_000;
+
+    t.mock.method(Date, "now", () => FIXED);
+
+    const calls = (from: number) =>
+        [0, 1, 2].map((index) => ({
+            id: index + 1,
+            at: from + index * 1000,
+            k: "tool",
+            c: "1",
+            call: `c${index}`,
+            n: "read",
+            s: "files",
+            l: "read a.go",
+        }));
+
+    // A night: calls long past, which the live page does not hold.
+    const night = makeWorld(t, { "1": { id: "1", kind: "session" } }).world;
+    const old = calls(1_000_000);
+
+    night.derive([]);
+    night.startReplay(old, 1);
+    // The monotonic clock is 5000 in makeWorld: 10 s later, every event of the replay has played.
+    night.stepReplay(15_000);
+    assert.equal(night.stats().replayAt, 1_002_000);
+    assert.equal(night.stats().perMinute, 3);
+
+    // After it, the live count is back: the calls are long past.
+    night.stopReplay([]);
+    assert.equal(night.stats().perMinute, 0);
+
+    // A replay of the page's own events, from the last minute: each call counts 1 time, not 2.
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+    const recent = calls(FIXED - 3000);
+
+    world.derive(recent);
+    assert.equal(world.stats().perMinute, 3);
+    world.startReplay(recent, 1);
+    world.stepReplay(15_000);
+    assert.equal(world.stats().perMinute, 3);
+    world.stopReplay(recent);
+    assert.equal(world.stats().perMinute, 3);
+});

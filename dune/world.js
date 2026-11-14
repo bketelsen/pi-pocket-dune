@@ -249,18 +249,23 @@ export class World {
     /** New events, as they come: each changes the model, and with `animate` shows in the world. */
     ingest(events, animate) {
         for (const event of events) {
-            if (event.k === "tool") {
-                this.toolTimes.push(event.at);
-            }
-
-            const effects = this.apply(event);
-
-            if (animate) {
-                effects.forEach((effect) => this.effect(effect));
-            }
+            this.take(event, animate);
         }
 
         this.layout();
+    }
+
+    /** One event, live or replayed: a tool call counts for calls/minute; with `animate` it shows in the world. */
+    take(event, animate) {
+        if (event.k === "tool") {
+            this.toolTimes.push(event.at);
+        }
+
+        const effects = this.apply(event);
+
+        if (animate) {
+            effects.forEach((effect) => this.effect(effect));
+        }
     }
 
     setScope(scope, focus) {
@@ -913,6 +918,8 @@ export class World {
         const list = events.filter((event) => this.data.convs[event.c] || event.k === "msg");
 
         this.model.reset(this.data.convs);
+        // Calls/minute counts the replayed calls, not the live ones from before the replay.
+        this.toolTimes = [];
         this.agents.forEach((agent) => {
             agent.state = "home";
             agent.pos = { ...agent.home };
@@ -962,7 +969,7 @@ export class World {
         while (replay.index < replay.queue.length && replay.queue[replay.index].at <= elapsed) {
             const { event } = replay.queue[replay.index++];
 
-            this.apply(event).forEach((effect) => this.effect(effect));
+            this.take(event, true);
         }
 
         replay.progress = replay.total > 0 ? clamp(elapsed / replay.total, 0, 1) : 1;
