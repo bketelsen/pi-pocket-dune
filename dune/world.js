@@ -1403,6 +1403,8 @@ export class World {
         const dt = Math.min(0.05, (now - (this.lastFrame ?? now)) / 1000);
 
         this.lastFrame = now;
+        // The frame's time, for what moves while it is drawn (the storm's streaks).
+        this.frameDt = dt;
         this.stepReplay(now);
 
         if (this.goal) {
@@ -3272,7 +3274,8 @@ export class World {
 
             streaks.length = Math.min(streaks.length, Math.ceil(280 * power));
 
-            const dt = 1 / 60;
+            // The real frame time: a fixed step would blow faster on a faster display.
+            const dt = this.frameDt ?? 0;
 
             ctx.strokeStyle = `rgba(250,210,150,${0.6 * power})`;
             ctx.lineWidth = 1.6;

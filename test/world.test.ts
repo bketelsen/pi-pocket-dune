@@ -323,3 +323,32 @@ test("a replay counts its own tool calls in calls/minute, each 1 time", (t) => {
     world.stopReplay(recent);
     assert.equal(world.stats().perMinute, 3);
 });
+
+test("the storm's streaks move at the same speed at 60 Hz and at 120 Hz", (t) => {
+    const travel = (hz: number) => {
+        const { world } = makeWorld(t, {});
+
+        world.view = { w: 100_000, h: 1000, dpr: 1 };
+        world.model.storm = true;
+        world.storm = 1;
+        world.nextWorm = Infinity;
+        world.fx.streaks = Array.from({ length: 280 }, () => ({ x: 0, y: 0, v: 600, l: 20 }));
+
+        // 1 second of frames, from the first frame at 0 ms.
+        for (let frame = 0; frame <= hz; frame++) {
+            const now = (frame * 1000) / hz;
+
+            world.update(now);
+            world.drawStorm(now);
+        }
+
+        return world.fx.streaks[0].x;
+    };
+
+    const at60 = travel(60);
+    const at120 = travel(120);
+
+    // 600 px per second, at any frame rate.
+    assert.ok(Math.abs(at60 - 600) < 1, `60 Hz: ${at60}`);
+    assert.ok(Math.abs(at120 - 600) < 1, `120 Hz: ${at120}`);
+});
