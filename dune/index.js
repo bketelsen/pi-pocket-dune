@@ -186,12 +186,11 @@ export function nextAsk({
 
         if (
             numeric(id) &&
-            (!asked.has(id) || stale) &&
-            !waiting(id) &&
-            conv?.kind !== "subagent" &&
             // Once each, per page: Pi Pocket's word on who each session is (its persona, from the
             // team extension) can be newer than what the desert holds.
-            (stale || !asked.has(id) || !conv || !conv.title)
+            (!asked.has(id) || stale) &&
+            !waiting(id) &&
+            conv?.kind !== "subagent"
         ) {
             return id;
         }
