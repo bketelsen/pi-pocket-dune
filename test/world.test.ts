@@ -278,3 +278,167 @@ test("the open task's name sits under the sietch's title, only close up", (t) =>
         }
     }
 });
+
+test("a replay counts its own tool calls in calls/minute, each 1 time", (t) => {
+    const FIXED = 1_800_000_000_000;
+
+    t.mock.method(Date, "now", () => FIXED);
+
+    const calls = (from: number) =>
+        [0, 1, 2].map((index) => ({
+            id: index + 1,
+            at: from + index * 1000,
+            k: "tool",
+            c: "1",
+            call: `c${index}`,
+            n: "read",
+            s: "files",
+            l: "read a.go",
+        }));
+
+    // A night: calls long past, which the live page does not hold.
+    const night = makeWorld(t, { "1": { id: "1", kind: "session" } }).world;
+    const old = calls(1_000_000);
+
+    night.derive([]);
+    night.startReplay(old, 1);
+    // The monotonic clock is 5000 in makeWorld: 10 s later, every event of the replay has played.
+    night.stepReplay(15_000);
+    assert.equal(night.stats().replayAt, 1_002_000);
+    assert.equal(night.stats().perMinute, 3);
+
+    // After it, the live count is back: the calls are long past.
+    night.stopReplay([]);
+    assert.equal(night.stats().perMinute, 0);
+
+    // A replay of the page's own events, from the last minute: each call counts 1 time, not 2.
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+    const recent = calls(FIXED - 3000);
+
+    world.derive(recent);
+    assert.equal(world.stats().perMinute, 3);
+    world.startReplay(recent, 1);
+    world.stepReplay(15_000);
+    assert.equal(world.stats().perMinute, 3);
+    world.stopReplay(recent);
+    assert.equal(world.stats().perMinute, 3);
+});
+
+test("the storm's streaks move at the same speed at 60 Hz and at 120 Hz", (t) => {
+    const travel = (hz: number) => {
+        const { world } = makeWorld(t, {});
+
+        world.view = { w: 100_000, h: 1000, dpr: 1 };
+        world.model.storm = true;
+        world.storm = 1;
+        world.nextWorm = Infinity;
+        world.fx.streaks = Array.from({ length: 280 }, () => ({ x: 0, y: 0, v: 600, l: 20 }));
+
+        // 1 second of frames, from the first frame at 0 ms.
+        for (let frame = 0; frame <= hz; frame++) {
+            const now = (frame * 1000) / hz;
+
+            world.update(now);
+            world.drawStorm(now);
+        }
+
+        return world.fx.streaks[0].x;
+    };
+
+    const at60 = travel(60);
+    const at120 = travel(120);
+
+    // 600 px per second, at any frame rate.
+    assert.ok(Math.abs(at60 - 600) < 1, `60 Hz: ${at60}`);
+    assert.ok(Math.abs(at120 - 600) < 1, `120 Hz: ${at120}`);
+});
+
+test("a failed task that a new message ends is buried, and no worm comes to see it", (t) => {
+    t.mock.method(Date, "now", () => 1_800_000_000_000);
+    t.mock.method(Math, "random", () => 0.5);
+
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+    let id = 0;
+    const ev = (k: string, data: Record<string, unknown>) => ({
+        id: ++id,
+        at: 1000 + id,
+        k,
+        ...data,
+    });
+
+    world.derive([ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Fix it" })]);
+
+    // 8 calls, 6 of them fail: a great work, but a ruin.
+    const calls = [];
+
+    for (let index = 0; index < 8; index++) {
+        calls.push(ev("tool", { c: "1", call: `c${index}`, n: "bash", s: "shell", l: "go test" }));
+        calls.push(ev("done", { c: "1", call: `c${index}`, n: "bash", ok: index < 2 ? 1 : 0 }));
+    }
+
+    world.ingest(calls, true);
+    world.fx.worms.length = 0;
+
+    const first = world.model.open.get("1");
+
+    assert.equal(first?.calls, 8);
+
+    // A new message ends the task before the agent went idle.
+    world.ingest([ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Again" })], true);
+
+    assert.equal(first.state, "ruin");
+    assert.equal(world.fx.worms.length, 0);
+});
+
+test("a great work that a new message ends still brings a worm", (t) => {
+    t.mock.method(Date, "now", () => 1_800_000_000_000);
+    t.mock.method(Math, "random", () => 0.5);
+
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+    let id = 0;
+    const ev = (k: string, data: Record<string, unknown>) => ({
+        id: ++id,
+        at: 1000 + id,
+        k,
+        ...data,
+    });
+
+    world.derive([ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Fix it" })]);
+
+    const calls = [];
+
+    for (let index = 0; index < 8; index++) {
+        calls.push(
+            ev("tool", { c: "1", call: `c${index}`, n: "read", s: "files", l: "read a.go" }),
+        );
+        calls.push(ev("done", { c: "1", call: `c${index}`, n: "read", ok: 1 }));
+    }
+
+    world.ingest(calls, true);
+    world.fx.worms.length = 0;
+    world.ingest([ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Again" })], true);
+
+    assert.equal(world.model.tasks.get("1")?.[0]?.state, "done");
+    assert.equal(world.fx.worms.length, 1);
+    assert.equal(world.fx.worms[0].rise, true);
+});
+
+test("a new message that ends a failed task says it is a ruin, as idle does", (t) => {
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+    const desert = world.model;
+    let id = 0;
+    const ev = (k: string, data: Record<string, unknown>) =>
+        desert.apply({ id: ++id, at: 1000 + id, k, ...data });
+
+    ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Fix it" });
+
+    for (let index = 0; index < 3; index++) {
+        ev("tool", { c: "1", call: `c${index}`, n: "bash", s: "shell", l: "go test" });
+        ev("done", { c: "1", call: `c${index}`, n: "bash", ok: 0 });
+    }
+
+    const effects = ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Again" });
+    const built = effects.find((effect: { type: string }) => effect.type === "built");
+
+    assert.deepEqual(built, { type: "built", owner: "1", task: "t1", ruin: true });
+});
