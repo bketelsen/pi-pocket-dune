@@ -119,7 +119,7 @@ function skyAt(now, mode) {
     return { t, sun, night, dusk, angle: t * TAU };
 }
 
-export function timeWord(sky) {
+function timeWord(sky) {
     if (sky.night > 0.75) {
         return "Night of two moons";
     }
@@ -148,7 +148,6 @@ export class World {
             prints: [],
             motes: [],
             bricks: [],
-            pops: [],
             thopters: [],
             worms: [],
             dust: [],
@@ -174,7 +173,6 @@ export class World {
         this.onSelect = null;
         this.onReplayEnd = null;
         this.fitted = false;
-        this.dirty = true;
         this.toolTimes = [];
         this.setData(data);
         this.bindInput();
@@ -584,8 +582,6 @@ export class World {
         if (!this.fitted && this.view.w > 1) {
             this.fit(true);
         }
-
-        this.dirty = true;
     }
 
     /** The dunes, drawn once for the bounds into a picture of their own. */
@@ -632,10 +628,6 @@ export class World {
     }
 
     // ——— where things are ———
-
-    placeAt(key) {
-        return this.places.get(key);
-    }
 
     /** Where a sender or receiver of a message is now. */
     whereIs(ref) {
@@ -697,8 +689,8 @@ export class World {
                     };
 
                     this.walk(agent, spot, "work");
-                } else {
-                    agent.state = agent.state === "walk" ? "walk" : "work";
+                } else if (agent.state !== "walk") {
+                    agent.state = "work";
                 }
 
                 this.sound?.play("step");
@@ -737,9 +729,10 @@ export class World {
                 const agent = this.agents.get(effect.c);
 
                 if (agent) {
-                    agent.state === "home" || agent.state === "think"
-                        ? (agent.state = "think")
-                        : null;
+                    if (agent.state === "home" || agent.state === "think") {
+                        agent.state = "think";
+                    }
+
                     agent.spiceUntil = now + 30_000;
                     agent.pv = effect.pv ?? agent.conv.provider;
                 }
@@ -1205,6 +1198,11 @@ export class World {
         return this.replay?.night ? "night" : this.sky;
     }
 
+    /** The desert's time: the last event's during a replay, else `now`. Reads the wall clock only when live. */
+    clock(now) {
+        return this.replay ? this.model.lastAt : (now ?? Date.now());
+    }
+
     stats() {
         const now = Date.now();
         let homes = 0;
@@ -1225,12 +1223,12 @@ export class World {
             tokens += (agent.conv.tin ?? 0) + (agent.conv.tout ?? 0);
             cost += agent.conv.cost ?? 0;
 
-            if (this.model.isBusy(agent.id, this.replay ? this.model.lastAt : now)) {
+            if (this.model.isBusy(agent.id, this.clock(now))) {
                 active++;
             }
         }
 
-        const since = (this.replay ? this.model.lastAt : now) - 60_000;
+        const since = this.clock(now) - 60_000;
 
         this.toolTimes = this.toolTimes.filter((at) => at >= now - 120_000 || this.replay);
 
@@ -1283,7 +1281,7 @@ export class World {
                 conv,
                 cast: agent.cast,
                 home: homeWord(agent.cast, agent.kind),
-                busy: this.model.isBusy(agent.id, this.replay ? this.model.lastAt : Date.now()),
+                busy: this.model.isBusy(agent.id, this.clock()),
                 doing: busy?.l ?? (busy?.k === "think" ? "consulting the spice" : null),
                 tasks,
                 helpers,
@@ -2408,7 +2406,7 @@ export class World {
         const { ctx } = this;
         const { x, y } = agent.rock;
         const cast = agent.cast;
-        const busy = this.model.isBusy(agent.id, this.replay ? this.model.lastAt : Date.now());
+        const busy = this.model.isBusy(agent.id, this.clock());
         const w = agent.kind === "linked" ? 160 : 190;
         const h = agent.kind === "linked" ? 74 : 90;
 
@@ -2500,7 +2498,7 @@ export class World {
     drawStructure(task, lot, now, sky, owner) {
         const { ctx } = this;
         const building = task.state === "building";
-        const style = building ? styleOf(task) : task.state === "ruin" ? "ruin" : styleOf(task);
+        const style = task.state === "ruin" ? "ruin" : styleOf(task);
         const random = rng(task.seed * 7919);
         const size = clamp(0.55 + Math.sqrt(task.calls) * 0.14, 0.6, 1.5);
         const growth = building ? clamp(0.25 + task.calls / 20, 0.25, 0.9) : 1;
@@ -2652,12 +2650,7 @@ export class World {
                 // A palace: a bit of everything.
                 this.block(x, y, 46 * size, h * 0.45, 12, stone);
                 this.dome(x, y - h * 0.45 - 12, 14 * size, shade(stone, 0.1));
-                this.dome(
-                    x - 16 * size,
-                    y - h * 0.45 - 6,
-                    8 * size,
-                    accent.startsWith("hsl") ? "#c9a57a" : accent,
-                );
+                this.dome(x - 16 * size, y - h * 0.45 - 6, 8 * size, "#c9a57a");
                 this.dome(x + 16 * size, y - h * 0.45 - 6, 8 * size, "#c9a57a");
                 ctx.fillStyle = accent;
                 ctx.fillRect(x - 1, y - h * 0.45 - 34 * size, 2, 10);
@@ -3425,7 +3418,7 @@ export class World {
 
                 if (open && z > 0.5) {
                     this.label(x, y + 26, `“${open.title}”`, {
-                        dy: z > 0.35 ? 36 : 21,
+                        dy: 36,
                         size: 11,
                         color: "#f3e2b5",
                         bg: "rgba(28,14,6,0.5)",
