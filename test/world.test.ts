@@ -1,7 +1,7 @@
 // The engine's logic that needs no screen: a World on a stub canvas that records what it draws.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 // @ts-expect-error: the browser module is plain JavaScript, without types.
 import { World } from "../dune/world.js";
 
@@ -53,7 +53,10 @@ function recorder() {
     return { ctx, calls };
 }
 
-function makeWorld(convs: Record<string, Record<string, unknown>>) {
+function makeWorld(t: TestContext, convs: Record<string, Record<string, unknown>>) {
+    // The constructor reads the monotonic clock: fix it, so no test reads real time.
+    t.mock.method(performance, "now", () => 5000);
+
     const { ctx, calls } = recorder();
     const canvas = {
         getContext: () => ctx,
@@ -73,7 +76,7 @@ test("the desert's clock: live it is now, in a replay the last event's time", (t
 
     t.mock.method(Date, "now", () => FIXED);
 
-    const { world } = makeWorld({ "1": { id: "1", kind: "session" } });
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
 
     // One tool call long ago: the model's last event is at OLD + 1.
     world.derive([
@@ -114,13 +117,42 @@ test("the desert's clock: live it is now, in a replay the last event's time", (t
     assert.equal(world.selection().busy, true);
 });
 
+test("in a replay, the selection and the sietch read no wall clock", (t) => {
+    const now = t.mock.method(Date, "now", () => 1_800_000_000_000);
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+
+    world.derive([
+        { id: 1, at: 1000, k: "tool", c: "1", call: "a", n: "read", s: "files", l: "read a.go" },
+    ]);
+    world.selected = { type: "agent", id: "1" };
+
+    const agent = world.agents.get("1");
+    const sky = { night: 0, dusk: 0, angle: 0 };
+
+    world.sun = sky;
+    assert.ok(agent);
+
+    // Live: each reads the wall clock 1 time.
+    now.mock.resetCalls();
+    world.selection();
+    assert.equal(now.mock.callCount(), 1);
+    now.mock.resetCalls();
+    world.drawSietch(agent, 0, sky);
+    assert.equal(now.mock.callCount(), 1);
+
+    // In a replay: the last event's time is the clock, and the wall clock is not read.
+    world.replay = { progress: 0 };
+    now.mock.resetCalls();
+    world.selection();
+    world.drawSietch(agent, 0, sky);
+    assert.equal(now.mock.callCount(), 0);
+});
+
 test("think and walk effects change the agent's state only where they should", (t) => {
     const FIXED = 1_800_000_000_000;
 
     t.mock.method(Date, "now", () => FIXED);
-    t.mock.method(performance, "now", () => 5000);
-
-    const { world } = makeWorld({
+    const { world } = makeWorld(t, {
         "1": { id: "1", kind: "session", provider: "anthropic" },
     });
 
@@ -200,7 +232,7 @@ for (const [name, task, count, hash] of STRUCTURES) {
     test(`drawStructure draws a ${name} as it did before`, (t) => {
         t.mock.method(Math, "random", () => 0.01);
 
-        const { world, calls } = makeWorld({});
+        const { world, calls } = makeWorld(t, {});
 
         world.sun = { night: 0.2, dusk: 0.3, angle: 1.1 };
         calls.length = 0;
@@ -219,7 +251,7 @@ for (const [name, task, count, hash] of STRUCTURES) {
 test("the open task's name sits under the sietch's title, only close up", (t) => {
     t.mock.method(Date, "now", () => 1_800_000_000_000);
 
-    const { world } = makeWorld({ "1": { id: "1", kind: "session" } });
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
 
     world.derive([
         { id: 1, at: 1000, k: "msg", from: "human:Brian", to: "1", via: "human", text: "Fix it" },

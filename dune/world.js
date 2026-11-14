@@ -1198,9 +1198,9 @@ export class World {
         return this.replay?.night ? "night" : this.sky;
     }
 
-    /** The desert's time: the last event's during a replay, else `now`. */
-    clock(now = Date.now()) {
-        return this.replay ? this.model.lastAt : now;
+    /** The desert's time: the last event's during a replay, else `now`. Reads the wall clock only when live. */
+    clock(now) {
+        return this.replay ? this.model.lastAt : (now ?? Date.now());
     }
 
     stats() {
