@@ -478,3 +478,101 @@ test("an empty world still asks for a missing focus session", () => {
         null,
     );
 });
+
+test("nextAsk characterizes when a session is asked again", () => {
+    const question = ({
+        convs,
+        asked = new Set<string>(),
+        askedAt = new Map<string, number>(),
+        askedTries = new Map<string, number>(),
+        retryAt = new Map<string, number>(),
+        unknown = new Map<string, number>(),
+        now,
+    }: {
+        convs: Record<string, { id: string; kind: string; title?: string }>;
+        asked?: Set<string>;
+        askedAt?: Map<string, number>;
+        askedTries?: Map<string, number>;
+        retryAt?: Map<string, number>;
+        unknown?: Map<string, number>;
+        now: number;
+    }) =>
+        nextAsk({
+            convs,
+            unknown,
+            visible: Object.keys(convs),
+            focus: null,
+            asked,
+            askedAt,
+            askedTries,
+            retryAt,
+            now,
+        });
+    const titled = { "3": { id: "3", kind: "session", title: "Fix the build" } };
+    const untitled = { "4": { id: "4", kind: "session", title: "New session" } };
+    const nameless = { "5": { id: "5", kind: "session" } };
+    const at = (id: string, when: number) => new Map([[id, when]]);
+    const tries = (id: string, count: number) => new Map([[id, count]]);
+
+    // Never asked: asked now, with or without a title.
+    assert.equal(question({ convs: titled, now: 0 }), "3");
+    assert.equal(question({ convs: untitled, now: 0 }), "4");
+    assert.equal(question({ convs: nameless, now: 0 }), "5");
+
+    // A titled session is asked again only after 5 minutes.
+    const once3 = { asked: new Set(["3"]), askedAt: at("3", 1000) };
+    assert.equal(question({ convs: titled, ...once3, now: 1000 + 300_000 }), null);
+    assert.equal(question({ convs: titled, ...once3, now: 1000 + 300_001 }), "3");
+    // The count of tries does not hold back a titled session.
+    assert.equal(
+        question({ convs: titled, ...once3, askedTries: tries("3", 9), now: 1000 + 300_001 }),
+        "3",
+    );
+
+    // An untitled session backs off 20 s × 2^tries, at most 5 minutes, and at most 5 tries.
+    const once4 = { asked: new Set(["4"]), askedAt: at("4", 1000) };
+    assert.equal(question({ convs: untitled, ...once4, now: 1000 + 20_000 }), null);
+    assert.equal(question({ convs: untitled, ...once4, now: 1000 + 20_001 }), "4");
+    assert.equal(
+        question({ convs: untitled, ...once4, askedTries: tries("4", 2), now: 1000 + 80_000 }),
+        null,
+    );
+    assert.equal(
+        question({ convs: untitled, ...once4, askedTries: tries("4", 2), now: 1000 + 80_001 }),
+        "4",
+    );
+    assert.equal(
+        question({ convs: untitled, ...once4, askedTries: tries("4", 4), now: 1000 + 300_000 }),
+        null,
+    );
+    assert.equal(
+        question({ convs: untitled, ...once4, askedTries: tries("4", 4), now: 1000 + 300_001 }),
+        "4",
+    );
+    assert.equal(
+        question({ convs: untitled, ...once4, askedTries: tries("4", 5), now: 1000 + 10_000_000 }),
+        null,
+    );
+
+    // A session with no title at all backs off the same way.
+    const once5 = { asked: new Set(["5"]), askedAt: at("5", 1000) };
+    assert.equal(question({ convs: nameless, ...once5, now: 1000 + 20_000 }), null);
+    assert.equal(question({ convs: nameless, ...once5, now: 1000 + 20_001 }), "5");
+
+    // A stale session still waits for its retry time.
+    assert.equal(
+        question({ convs: titled, ...once3, retryAt: at("3", 400_000), now: 1000 + 300_001 }),
+        null,
+    );
+
+    // A subagent is never asked about, and an id that is not numeric is nobody to ask about.
+    assert.equal(question({ convs: { "6": { id: "6", kind: "subagent" } }, now: 0 }), null);
+    assert.equal(
+        question({ convs: { "human:Brian": { id: "human:Brian", kind: "session" } }, now: 0 }),
+        null,
+    );
+
+    // A session the server holds back is asked once it has waited more than 1.2 s.
+    assert.equal(question({ convs: {}, unknown: at("8", 1000), now: 2200 }), null);
+    assert.equal(question({ convs: {}, unknown: at("8", 1000), now: 2201 }), "8");
+});
