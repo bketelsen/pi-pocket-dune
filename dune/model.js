@@ -587,7 +587,14 @@ export class Desert {
                         if (open) {
                             const task = this.finish(to, at);
 
-                            task && effects.push({ type: "built", owner: to, task: task.id });
+                            // As on idle: a ruin says so, and no worm comes to see it.
+                            task &&
+                                effects.push({
+                                    type: "built",
+                                    owner: to,
+                                    task: task.id,
+                                    ruin: task.state === "ruin",
+                                });
                         }
 
                         this.begin(to, at, event.text, event.from, event.via, event.id);

@@ -352,3 +352,93 @@ test("the storm's streaks move at the same speed at 60 Hz and at 120 Hz", (t) =>
     assert.ok(Math.abs(at60 - 600) < 1, `60 Hz: ${at60}`);
     assert.ok(Math.abs(at120 - 600) < 1, `120 Hz: ${at120}`);
 });
+
+test("a failed task that a new message ends is buried, and no worm comes to see it", (t) => {
+    t.mock.method(Date, "now", () => 1_800_000_000_000);
+    t.mock.method(Math, "random", () => 0.5);
+
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+    let id = 0;
+    const ev = (k: string, data: Record<string, unknown>) => ({
+        id: ++id,
+        at: 1000 + id,
+        k,
+        ...data,
+    });
+
+    world.derive([ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Fix it" })]);
+
+    // 8 calls, 6 of them fail: a great work, but a ruin.
+    const calls = [];
+
+    for (let index = 0; index < 8; index++) {
+        calls.push(ev("tool", { c: "1", call: `c${index}`, n: "bash", s: "shell", l: "go test" }));
+        calls.push(ev("done", { c: "1", call: `c${index}`, n: "bash", ok: index < 2 ? 1 : 0 }));
+    }
+
+    world.ingest(calls, true);
+    world.fx.worms.length = 0;
+
+    const first = world.model.open.get("1");
+
+    assert.equal(first?.calls, 8);
+
+    // A new message ends the task before the agent went idle.
+    world.ingest([ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Again" })], true);
+
+    assert.equal(first.state, "ruin");
+    assert.equal(world.fx.worms.length, 0);
+});
+
+test("a great work that a new message ends still brings a worm", (t) => {
+    t.mock.method(Date, "now", () => 1_800_000_000_000);
+    t.mock.method(Math, "random", () => 0.5);
+
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+    let id = 0;
+    const ev = (k: string, data: Record<string, unknown>) => ({
+        id: ++id,
+        at: 1000 + id,
+        k,
+        ...data,
+    });
+
+    world.derive([ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Fix it" })]);
+
+    const calls = [];
+
+    for (let index = 0; index < 8; index++) {
+        calls.push(
+            ev("tool", { c: "1", call: `c${index}`, n: "read", s: "files", l: "read a.go" }),
+        );
+        calls.push(ev("done", { c: "1", call: `c${index}`, n: "read", ok: 1 }));
+    }
+
+    world.ingest(calls, true);
+    world.fx.worms.length = 0;
+    world.ingest([ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Again" })], true);
+
+    assert.equal(world.model.tasks.get("1")?.[0]?.state, "done");
+    assert.equal(world.fx.worms.length, 1);
+    assert.equal(world.fx.worms[0].rise, true);
+});
+
+test("a new message that ends a failed task says it is a ruin, as idle does", (t) => {
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+    const desert = world.model;
+    let id = 0;
+    const ev = (k: string, data: Record<string, unknown>) =>
+        desert.apply({ id: ++id, at: 1000 + id, k, ...data });
+
+    ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Fix it" });
+
+    for (let index = 0; index < 3; index++) {
+        ev("tool", { c: "1", call: `c${index}`, n: "bash", s: "shell", l: "go test" });
+        ev("done", { c: "1", call: `c${index}`, n: "bash", ok: 0 });
+    }
+
+    const effects = ev("msg", { from: "human:Brian", to: "1", via: "human", text: "Again" });
+    const built = effects.find((effect: { type: string }) => effect.type === "built");
+
+    assert.deepEqual(built, { type: "built", owner: "1", task: "t1", ruin: true });
+});
