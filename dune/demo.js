@@ -21,6 +21,8 @@ const CAST = [
             ["read", { path: "decisions/decided.md" }],
             ["memory", { action: "recall" }],
             ["bash", { command: "desk list --open" }],
+            ["desk", { action: "list" }],
+            ["plan", { action: "read" }],
         ],
     },
     {
@@ -64,6 +66,7 @@ const CAST = [
             ["bash", { command: "golangci-lint run" }],
             ["bash", { command: "gh pr checks 214" }],
             ["bash", { command: "git push origin fix/ci" }, 0.25],
+            ["background", { action: "start" }, 0.3],
             [
                 "subagent",
                 {
@@ -266,6 +269,25 @@ function classify(name, args, cwd) {
             return { s: `mcp:${args.server}`, i: args.tool, l: `${args.server} · ${args.tool}` };
         case "memory":
             return { s: "memory", i: args.action, l: `memory ${args.action}` };
+        // Only the action word: a background command can hold a secret.
+        case "desk":
+            return {
+                s: "citadel",
+                i: args.action || "desk",
+                l: `desk ${args.action}`.trim(),
+            };
+        case "plan":
+            return {
+                s: "citadel",
+                i: args.action || "plan",
+                l: `plan ${args.action}`.trim(),
+            };
+        case "background":
+            return {
+                s: "windtrap",
+                i: args.action || "background",
+                l: `background ${args.action}`.trim(),
+            };
         case "artifact":
             return { s: "artifact", i: args.title, l: `published ${args.title}` };
         case "subagent":

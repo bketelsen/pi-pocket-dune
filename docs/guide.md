@@ -50,7 +50,7 @@ as soon as a real agent appears. Press **Demo** to see it again at any time.
 | A sietch in the rocks                    | A session; its banner is its faction, the words under it its task                 |
 | An allied sietch on a trail              | A linked session (team delegations), on the road from the session that started it |
 | A stilltent                              | A subagent, by its parent's sietch                                                |
-| The Arrakeen Citadel                     | The people who write to the agents, and the Desk                                  |
+| The Arrakeen Citadel                     | The people who write to the agents, and the Desk: `desk` and `plan` calls         |
 | Spice Fields (one for each provider)     | Model requests: a halo of melange while an agent thinks, spice back as tokens     |
 | Archives of Chapterhouse                 | `read`, `write`, `edit`                                                           |
 | Ixian Foundry                            | Shell commands                                                                    |
@@ -60,6 +60,7 @@ as soon as a real agent appears. Press **Demo** to see it again at any time.
 | Vault of Other Memory                    | The memory tool, and `team_memory`                                                |
 | Mural Cave                               | Artifacts                                                                         |
 | Moon Dial                                | Scheduled messages, and night shifts                                              |
+| Windtraps of Sietch Tabr                 | `background` tasks: they work while no one watches                                |
 | Embassy of House … (one for each server) | MCP calls, under that server's banner                                             |
 | Landsraad Hall                           | Any other tool, from extensions                                                   |
 | An ornithopter                           | A message, a delegated task, or a report                                          |

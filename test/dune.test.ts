@@ -263,6 +263,79 @@ test("a shell command's label drops its leading cd", async () => {
     await town.dispose();
 });
 
+test("desk, plan and background calls go to the Citadel and the Windtraps, with only their action", async () => {
+    const town = await harness();
+
+    await town.meta("9");
+    town.tool("d1", "9", "desk", {
+        action: "board_add",
+        fields: { task: "SECRET-TASK-WORDS" },
+        text: "SECRET-TEXT",
+    });
+    town.tool("p1", "9", "plan", { action: "read", plan: "T560", text: "SECRET-PLAN" });
+    town.tool("b1", "9", "background", {
+        action: "start",
+        command: "API_TOKEN=abc123 ./run-secret-job",
+    });
+
+    const events = town.world().events.filter((event) => event.k === "tool");
+
+    assert.deepEqual(
+        events.map((event) => [event.s, event.i, event.l]),
+        [
+            ["citadel", "board_add", "desk board_add"],
+            ["citadel", "read", "plan read"],
+            ["windtrap", "start", "background start"],
+        ],
+    );
+
+    const kept = JSON.stringify(town.world());
+
+    for (const secret of ["SECRET", "abc123", "run-secret-job"]) {
+        assert.ok(!kept.includes(secret), `${secret} is not kept`);
+    }
+
+    await town.dispose();
+});
+
+test("a desk, plan or background call has only its action read", async () => {
+    const town = await harness();
+
+    await town.meta("9");
+
+    for (const name of ["desk", "plan", "background"]) {
+        const touched = new Set<string>();
+        const args = new Proxy(
+            {
+                action: "start",
+                task: "a task to hand on",
+                message: "a message to hand on",
+                agent: "someone",
+                text: "some words",
+                command: "./run-job",
+            },
+            {
+                get(target, field, receiver) {
+                    typeof field === "string" && touched.add(field);
+
+                    return Reflect.get(target, field, receiver);
+                },
+            },
+        );
+
+        town.tool(`${name}-1`, "9", name, args);
+        assert.deepEqual([...touched], ["action"], `${name} reads only its action`);
+    }
+
+    const kept = town.world().events.filter((event) => event.k === "tool");
+
+    assert.deepEqual(
+        kept.map((event) => event.l),
+        ["desk start", "plan start", "background start"],
+    );
+    await town.dispose();
+});
+
 test("a model request is never held: the hook returns at once", async () => {
     const town = await harness();
     const result = town.handlers.beforeRequest!(

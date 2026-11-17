@@ -60,6 +60,13 @@ export const PLACES = {
         what: "scheduled messages, by the two moons",
         draw: "dial",
     },
+    windtrap: {
+        label: "Windtraps of Sietch Tabr",
+        short: "Windtraps",
+        icon: "gear",
+        what: "background tasks: they work while no one watches",
+        draw: "windtrap",
+    },
     ext: {
         label: "Landsraad Hall",
         short: "Landsraad",
@@ -152,6 +159,6 @@ export const CITADEL = {
     label: "Arrakeen Citadel",
     short: "Citadel",
     icon: "crown",
-    what: "the people who write to the agents, and the Desk",
+    what: "the people who write to the agents, and the Desk: desk and plan calls",
     draw: "citadel",
 };

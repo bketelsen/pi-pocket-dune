@@ -334,7 +334,11 @@ export class World {
 
         const placeKeys = [
             ...CORE,
-            ...res.filter((key) => !key.startsWith("model:") && !CORE.includes(key)),
+            // The Citadel stands at the middle, not on the ring: a desk call's key must not put a
+            // second one around it.
+            ...res.filter(
+                (key) => key !== "citadel" && !key.startsWith("model:") && !CORE.includes(key),
+            ),
             ...[...providers].map((provider) => `model:${provider}`),
         ];
         const key = [
@@ -1972,6 +1976,9 @@ export class World {
             case "dial":
                 this.drawDial(x, y, now);
                 break;
+            case "windtrap":
+                this.drawWindtrap(x, y, hot, now);
+                break;
             case "embassy":
                 this.drawEmbassy(x, y, place.def.color, now);
                 break;
@@ -2285,6 +2292,50 @@ export class World {
         ctx.beginPath();
         ctx.arc(x + Math.cos(second) * 20, y - 30 + Math.sin(second) * 4, 4.5, 0, TAU);
         ctx.fill();
+    }
+
+    /** The windtraps of Sietch Tabr: tall towers that pull water from the air, while no one watches. */
+    drawWindtrap(x, y, hot, now) {
+        const { ctx } = this;
+        const sand = "#b99b76";
+        const stone = "#c9a57a";
+        const working = hot && !this.calm;
+        const spin = now / (working ? 260 : 2400);
+
+        this.shadow(x, y + 3, 110, 30, 60);
+        // A low wall at the foot, and 2 towers: the taller one pulls the most water.
+        this.block(x, y, 92, 12, 8, shade(sand, -0.16));
+        this.block(x - 30, y - 4, 16, 46, 6, sand);
+        this.block(x + 4, y - 4, 20, 72, 8, stone);
+        this.dome(x + 4, y - 84, 9, shade(stone, 0.1));
+        // Fins down the tall tower's face.
+        ctx.fillStyle = "#6d5138";
+
+        for (let fin = 0; fin < 3; fin++) {
+            ctx.fillRect(x - 6, y - 24 - fin * 16, 16, 3);
+        }
+
+        // Its vane, turning faster while the windtraps work.
+        const vane = Math.cos(spin) * 9;
+        const lift = Math.sin(spin) * 9;
+
+        ctx.strokeStyle = "#7c5f44";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 4 - vane, y - 94 - lift);
+        ctx.lineTo(x + 4 + vane, y - 94 + lift);
+        ctx.stroke();
+
+        // Water, drop by drop, while they work.
+        if (working) {
+            ctx.fillStyle = "rgba(160,220,255,0.8)";
+
+            for (let drop = 0; drop < 3; drop++) {
+                const t = (now / 1000 + drop / 3) % 1;
+
+                ctx.fillRect(x + 24, y - 12 + t * 14, 2, 3);
+            }
+        }
     }
 
     drawEmbassy(x, y, color, now) {

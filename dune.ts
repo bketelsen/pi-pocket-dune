@@ -457,6 +457,26 @@ function classify(
                 i: str("action") || "plan",
                 l: `schedule ${clip(str("when") || str("action"), 40)}`,
             };
+        // The desk, plan and background tools: the label and the item are the `action` word only. No
+        // other argument is ever read, because a background command can hold a secret.
+        case "desk":
+            return {
+                s: "citadel",
+                i: clip(str("action"), 30) || "desk",
+                l: clip(`desk ${str("action")}`.trim(), 40),
+            };
+        case "plan":
+            return {
+                s: "citadel",
+                i: clip(str("action"), 30) || "plan",
+                l: clip(`plan ${str("action")}`.trim(), 40),
+            };
+        case "background":
+            return {
+                s: "windtrap",
+                i: clip(str("action"), 30) || "background",
+                l: clip(`background ${str("action")}`.trim(), 40),
+            };
         case "watch_pr":
             return { s: "github", i: "watch PR", l: `watch PR ${str("pr")}`.trim() };
         case "codemode":
@@ -1792,9 +1812,10 @@ export default async function createDune(host: Host, web: Web) {
                     touch(what.s, what.i, id, what.w);
                 }
 
-                const message = typeof args.message === "string" ? args.message : "";
-                const agent = typeof args.agent === "string" ? args.agent : undefined;
-                const task = typeof args.task === "string" ? args.task : "";
+                // Only the tools that hand work on read their message or task: a `desk`, `plan` or
+                // `background` call has its `action` read, and no other argument (test/dune.test.ts).
+                const text = (field: string) =>
+                    typeof args[field] === "string" ? (args[field] as string) : "";
                 const expect = (entry: Omit<Pending, "from" | "at" | "callKey">) => {
                     prune();
 
@@ -1808,18 +1829,24 @@ export default async function createDune(host: Host, web: Web) {
                 if (
                     (call.name === "subagent" || call.name === "team") &&
                     ["spawn", "send", "start"].includes(String(args.action)) &&
-                    probeOf(message).length >= MIN_PROBE
+                    probeOf(text("message")).length >= MIN_PROBE
                 ) {
                     expect({
                         via: call.name as Pending["via"],
                         action: String(args.action),
                         name: typeof args.name === "string" ? args.name : undefined,
                         title: typeof args.title === "string" ? clip(args.title, 60) : undefined,
-                        probe: probeOf(message),
+                        probe: probeOf(text("message")),
                     });
-                } else if (call.name === "team_delegate" && probeOf(task).length >= MIN_PROBE) {
+                } else if (
+                    call.name === "team_delegate" &&
+                    probeOf(text("task")).length >= MIN_PROBE
+                ) {
                     // The owner's team tool: it starts a linked session for a persona, with the task after a
                     // preamble.
+                    const task = text("task");
+                    const agent = typeof args.agent === "string" ? args.agent : undefined;
+
                     expect({
                         via: "team",
                         action: "start",
@@ -1831,12 +1858,15 @@ export default async function createDune(host: Host, web: Web) {
                         ),
                         probe: probeOf(task),
                     });
-                } else if (call.name === "team_message" && probeOf(message).length >= MIN_PROBE) {
+                } else if (
+                    call.name === "team_message" &&
+                    probeOf(text("message")).length >= MIN_PROBE
+                ) {
                     expect({
                         via: "team",
                         action: "send",
                         name: typeof args.to === "string" ? args.to : undefined,
-                        probe: probeOf(message),
+                        probe: probeOf(text("message")),
                     });
                 }
 
