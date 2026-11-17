@@ -1,0 +1,7 @@
+{
+  "date": "2026-11-16",
+  "scope": "tool-argument-reads",
+  "correction": "When a tool's label must keep only its action word, check the whole hook and not only `classify`: `beforeTool` read `message`, `agent` and `task` for every call, so read those only in the branches of the tools that hand work on",
+  "evidence": "pi-pocket-dune#25, cross-review (openai/gpt-6.1-sol) of head 70f9c0a, finding 1",
+  "promoted_to": "test/dune.test.ts (a desk, plan or background call has only its action read)"
+}

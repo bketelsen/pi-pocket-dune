@@ -298,6 +298,44 @@ test("desk, plan and background calls go to the Citadel and the Windtraps, with 
     await town.dispose();
 });
 
+test("a desk, plan or background call has only its action read", async () => {
+    const town = await harness();
+
+    await town.meta("9");
+
+    for (const name of ["desk", "plan", "background"]) {
+        const touched = new Set<string>();
+        const args = new Proxy(
+            {
+                action: "start",
+                task: "a task to hand on",
+                message: "a message to hand on",
+                agent: "someone",
+                text: "some words",
+                command: "./run-job",
+            },
+            {
+                get(target, field, receiver) {
+                    typeof field === "string" && touched.add(field);
+
+                    return Reflect.get(target, field, receiver);
+                },
+            },
+        );
+
+        town.tool(`${name}-1`, "9", name, args);
+        assert.deepEqual([...touched], ["action"], `${name} reads only its action`);
+    }
+
+    const kept = town.world().events.filter((event) => event.k === "tool");
+
+    assert.deepEqual(
+        kept.map((event) => event.l),
+        ["desk start", "plan start", "background start"],
+    );
+    await town.dispose();
+});
+
 test("a model request is never held: the hook returns at once", async () => {
     const town = await harness();
     const result = town.handlers.beforeRequest!(
