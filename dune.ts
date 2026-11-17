@@ -457,6 +457,26 @@ function classify(
                 i: str("action") || "plan",
                 l: `schedule ${clip(str("when") || str("action"), 40)}`,
             };
+        // The desk, plan and background tools: the label and the item are the `action` word only. No
+        // other argument is ever read, because a background command can hold a secret.
+        case "desk":
+            return {
+                s: "citadel",
+                i: clip(str("action"), 30) || "desk",
+                l: clip(`desk ${str("action")}`.trim(), 40),
+            };
+        case "plan":
+            return {
+                s: "citadel",
+                i: clip(str("action"), 30) || "plan",
+                l: clip(`plan ${str("action")}`.trim(), 40),
+            };
+        case "background":
+            return {
+                s: "windtrap",
+                i: clip(str("action"), 30) || "background",
+                l: clip(`background ${str("action")}`.trim(), 40),
+            };
         case "watch_pr":
             return { s: "github", i: "watch PR", l: `watch PR ${str("pr")}`.trim() };
         case "codemode":

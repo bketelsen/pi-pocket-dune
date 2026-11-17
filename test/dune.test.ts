@@ -263,6 +263,41 @@ test("a shell command's label drops its leading cd", async () => {
     await town.dispose();
 });
 
+test("desk, plan and background calls go to the Citadel and the Windtraps, with only their action", async () => {
+    const town = await harness();
+
+    await town.meta("9");
+    town.tool("d1", "9", "desk", {
+        action: "board_add",
+        fields: { task: "SECRET-TASK-WORDS" },
+        text: "SECRET-TEXT",
+    });
+    town.tool("p1", "9", "plan", { action: "read", plan: "T560", text: "SECRET-PLAN" });
+    town.tool("b1", "9", "background", {
+        action: "start",
+        command: "API_TOKEN=abc123 ./run-secret-job",
+    });
+
+    const events = town.world().events.filter((event) => event.k === "tool");
+
+    assert.deepEqual(
+        events.map((event) => [event.s, event.i, event.l]),
+        [
+            ["citadel", "board_add", "desk board_add"],
+            ["citadel", "read", "plan read"],
+            ["windtrap", "start", "background start"],
+        ],
+    );
+
+    const kept = JSON.stringify(town.world());
+
+    for (const secret of ["SECRET", "abc123", "run-secret-job"]) {
+        assert.ok(!kept.includes(secret), `${secret} is not kept`);
+    }
+
+    await town.dispose();
+});
+
 test("a model request is never held: the hook returns at once", async () => {
     const town = await harness();
     const result = town.handlers.beforeRequest!(

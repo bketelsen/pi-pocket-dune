@@ -25,6 +25,8 @@ The same as Agent Civilization, whose server half this is:
   to 60 characters, the folder to 200.
 - **Masks** what looks like a secret before it keeps any text: API keys and tokens, `NAME=value` settings whose name
   says key, token, secret, or password, and private keys. Masking is a best effort.
+- **Labels** a `desk`, `plan` or `background` call with the tool's name and its `action` word only
+  (`desk board_add`, `background start`): never its task, text, fields or command.
 - **Shows** what it reads only to the owner (its routes and page are owner-only), and only for sessions that Pi Pocket
   confirms the owner may see (through its `conversationRoute`), or subagents that such a session's own tool call
   started.

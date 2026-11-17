@@ -168,6 +168,8 @@ test("places are named for Arrakis", () => {
     assert.equal(placeDef("model:anthropic").label, "Spice Fields of Anthropic");
     assert.equal(placeDef("model:github-copilot").short, "Copilot Fields");
     assert.equal(placeDef("mcp:truenas").label, "Embassy of House Truenas");
+    assert.equal(placeDef("windtrap").label, "Windtraps of Sietch Tabr");
+    assert.equal(placeDef("windtrap").draw, "windtrap");
 });
 
 test("the part each tool call adds", () => {
@@ -178,6 +180,8 @@ test("the part each tool call adds", () => {
     assert.equal(partOf({ s: "mcp:truenas" }), "mcp");
     assert.equal(partOf({ n: "team_delegate" }), "delegate");
     assert.equal(partOf({ s: "ext", n: "weird" }), "other");
+    assert.equal(partOf({ s: "citadel", n: "desk" }), "other");
+    assert.equal(partOf({ s: "windtrap", n: "background" }), "other");
 });
 
 test("a task's style is the work that weighed most", () => {

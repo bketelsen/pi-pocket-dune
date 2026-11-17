@@ -666,7 +666,10 @@ export default function setup(pocket) {
                 "A linked session, out on the road from the one that started it",
             ],
             ["A stilltent", "A subagent: a fedaykin, or an acolyte, beside its master's sietch"],
-            ["The Arrakeen Citadel", "The people who write to the agents"],
+            [
+                "The Arrakeen Citadel",
+                "The people who write to the agents, and the desk and plan calls",
+            ],
             ...Object.values(PLACES).map((place) => [place.label, place.what]),
             ["Embassy of a Great House", "An MCP server: each its own house and banner"],
             [

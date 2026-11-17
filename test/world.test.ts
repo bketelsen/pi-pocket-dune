@@ -442,3 +442,77 @@ test("a new message that ends a failed task says it is a ruin, as idle does", (t
 
     assert.deepEqual(built, { type: "built", owner: "1", task: "t1", ruin: true });
 });
+
+test("the desert has one Citadel at the middle, and the old Landsraad Hall stays", (t) => {
+    const FIXED = 1_800_000_000_000;
+
+    t.mock.method(Date, "now", () => FIXED);
+
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+    const res = (key: string) => ({ key, count: 1, last: FIXED, items: {}, by: {} });
+
+    // A desk call records its place as `citadel`, and a background call as `windtrap`.
+    world.data.res = { citadel: res("citadel"), windtrap: res("windtrap"), ext: res("ext") };
+    world.layout(true);
+
+    const citadels = [...world.places.values()].filter((place) => place.def.draw === "citadel");
+    const citadel = world.places.get("citadel");
+
+    assert.equal(citadels.length, 1);
+    assert.equal(citadel.x, 0);
+    assert.equal(citadel.y, 0);
+    assert.equal(world.places.get("windtrap").def.label, "Windtraps of Sietch Tabr");
+    // Data from before the Windtraps still has its hall.
+    assert.equal(world.places.get("ext").def.draw, "hall");
+});
+
+test("the windtraps are drawn small, and tapped as a place", (t) => {
+    const FIXED = 1_800_000_000_000;
+
+    t.mock.method(Date, "now", () => FIXED);
+
+    const { world, calls } = makeWorld(t, {});
+
+    world.data.res = {
+        windtrap: { key: "windtrap", count: 1, last: FIXED, items: {}, by: {} },
+    };
+    world.layout(true);
+
+    const place = world.places.get("windtrap");
+
+    world.sun = { night: 0.2, dusk: 0.3, angle: 1.1 };
+    calls.length = 0;
+    world.drawPlace(place, 9000, world.sun);
+
+    const hot = calls.length;
+
+    assert.ok(hot > 20, `the windtraps are drawn (${hot} calls)`);
+    assert.ok(hot <= 44, `the windtraps stay small (${hot} calls)`);
+    assert.deepEqual(world.hits.at(-1)?.ref, { type: "place", key: "windtrap" });
+
+    // Calm: the vanes still turn, and the falling water is gone.
+    world.calm = true;
+    calls.length = 0;
+    world.drawPlace(place, 9000, world.sun);
+    assert.ok(calls.length < hot);
+});
+
+test("a walk to the Citadel lands beside the one at the middle", (t) => {
+    const FIXED = 1_800_000_000_000;
+
+    t.mock.method(Date, "now", () => FIXED);
+
+    const { world } = makeWorld(t, { "1": { id: "1", kind: "session" } });
+
+    world.data.res = { citadel: { key: "citadel", count: 1, last: FIXED, items: {}, by: {} } };
+    world.derive([]);
+
+    const agent = world.agents.get("1");
+
+    assert.ok(agent);
+    world.effect({ type: "walk", c: "1", s: "citadel", label: "desk list" });
+
+    assert.equal(agent.state, "walk");
+    assert.equal(agent.label, "desk list");
+    assert.ok(Math.hypot(agent.to.x, agent.to.y) < 140);
+});
