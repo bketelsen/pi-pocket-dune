@@ -24,7 +24,7 @@
  *
  * It needs Pi Pocket 0.19.0 or later (extension API 2).
  */
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineExtension, GenerationTask, hook, ToolTask } from "@earendil-works/pi-durable";
 import type { Host, Web, WebRequest } from "./_pocket.d.ts";
@@ -559,6 +559,55 @@ interface Shared {
     kick: () => void;
 }
 
+/** A temporary save file this old is left from a save that never ended: a save takes milliseconds. */
+const STALE_TEMPORARY_MS = 10 * 60_000;
+
+/** Write a file whole or not at all: a write that fails (a full disk) removes its temporary file. */
+async function writeAtomic(
+    folder: string,
+    target: string,
+    temporary: string,
+    text: string,
+): Promise<void> {
+    try {
+        await mkdir(folder, { recursive: true, mode: 0o700 });
+        await writeFile(temporary, text, { mode: 0o600 });
+        await rename(temporary, target);
+    } catch (error) {
+        await rm(temporary, { force: true }).catch(() => {});
+        throw error;
+    }
+}
+
+/** Remove the temporary save files of this module, in its folder, that are older than `STALE_TEMPORARY_MS`. */
+export async function sweepTemporaries(folder: string, now: number): Promise<string[]> {
+    const removed: string[] = [];
+
+    try {
+        const names = await readdir(folder);
+        for (const name of names) {
+            if (!/^(world|history)\.json\.\d+\.[0-9a-z]+-[0-9a-z]+\.\d+\.tmp$/.test(name)) {
+                continue;
+            }
+            try {
+                const path = join(folder, name);
+                const info = await stat(path);
+                if (!info.isFile() || !(info.mtimeMs <= now - STALE_TEMPORARY_MS)) {
+                    continue;
+                }
+                await rm(path);
+                removed.push(name);
+            } catch {
+                // A file that cannot be checked or removed does not stop the sweep.
+            }
+        }
+    } catch {
+        // No folder yet, or it cannot be read.
+    }
+
+    return removed.sort();
+}
+
 /** The world in the file, or an empty one. Every record keyed by text from outside has no prototype. */
 async function load(file: string): Promise<World> {
     const empty: World = { seq: 0, convs: dict(), res: dict(), humans: dict(), events: [] };
@@ -796,6 +845,8 @@ export default async function createDune(host: Host, web: Web) {
     };
 
     if (shared === undefined) {
+        // Another process's save in progress is milliseconds old: the age limit keeps it safe.
+        state.saving = state.saving.then(() => sweepTemporaries(folder, Date.now())).then(() => {});
         state.world.ok?.forEach((id) => state.verified.add(id));
         state.world.seen?.forEach((key) => state.seen.add(key));
         (globalThis as Record<symbol, unknown>)[STATE] = state;
@@ -948,9 +999,7 @@ export default async function createDune(host: Host, web: Web) {
             const temporary = `${file}.${process.pid}.${boot}.${++saves}.tmp`;
 
             try {
-                await mkdir(folder, { recursive: true, mode: 0o700 });
-                await writeFile(temporary, JSON.stringify(data), { mode: 0o600 });
-                await rename(temporary, file);
+                await writeAtomic(folder, file, temporary, JSON.stringify(data));
             } catch (error) {
                 console.warn("dune: could not save its world:", error);
             }
@@ -1252,9 +1301,7 @@ export default async function createDune(host: Host, web: Web) {
             const temporary = `${historyFile}.${process.pid}.${boot}.${++saves}.tmp`;
 
             try {
-                await mkdir(folder, { recursive: true, mode: 0o700 });
-                await writeFile(temporary, text, { mode: 0o600 });
-                await rename(temporary, historyFile);
+                await writeAtomic(folder, historyFile, temporary, text);
             } catch (error) {
                 console.warn("dune: could not save its history:", error);
             }

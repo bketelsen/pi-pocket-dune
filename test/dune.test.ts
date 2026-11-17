@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { Host, Web } from "../_pocket.d.ts";
-import setup, { capHistory, setHistoryBudgetForTests } from "../dune.ts";
+import setup, { capHistory, setHistoryBudgetForTests, sweepTemporaries } from "../dune.ts";
 
 type Handler = (...args: never[]) => unknown;
 type Route = (request: unknown) => unknown;
@@ -209,6 +209,80 @@ test("a session stays hidden until Pi Pocket confirms that the owner may see it"
     assert.deepEqual(Object.keys(world.convs), ["7"]);
     assert.ok(world.events.every((event) => event.c === "7"));
     assert.ok(world.events.some((event) => event.c === "7"));
+    await town.dispose();
+});
+
+test("a save that fails removes its temporary file", async (t) => {
+    const folder = join(dataDir, "dune");
+    await mkdir(join(folder, "world.json"), { recursive: true });
+    await mkdir(join(folder, "history.json"), { recursive: true });
+    const warn = t.mock.method(console, "warn", () => {});
+    const town = await harness();
+    town.tool("t1", "7", "read", { path: "notes.md" });
+    await town.dispose();
+
+    const warnings = warn.mock.calls.map((call) => call.arguments[0]);
+    assert.ok(warnings.includes("dune: could not save its world:"));
+    assert.ok(warnings.includes("dune: could not save its history:"));
+    assert.deepEqual(
+        (await readdir(folder)).filter((name) => name.endsWith(".tmp")),
+        [],
+    );
+});
+
+test("sweepTemporaries removes only its own stale temporary files", async () => {
+    const folder = join(dataDir, "temporaries");
+    await mkdir(folder);
+    const now = Date.UTC(2026, 10, 17);
+    const stale = [
+        "world.json.979837.mwi8ynau-9e0dye.4340.tmp",
+        "history.json.2106.mwj8ovf4-9oazgh.27.tmp",
+    ];
+    const fresh = "world.json.1.abc-def.2.tmp";
+    const others = [
+        "notes.tmp",
+        "world.json",
+        "history.json",
+        "world.json.tmp",
+        "other.json.1.abc-def.2.tmp",
+    ];
+    for (const [name, time] of [
+        [stale[0]!, now - 10 * 60_000],
+        [stale[1]!, now - 3_600_000],
+        [fresh, now - 10 * 60_000 + 1000],
+        ...others.map((name) => [name, now - 3_600_000] as const),
+    ] as const) {
+        const path = join(folder, name);
+        await writeFile(path, "temporary");
+        await utimes(path, new Date(time), new Date(time));
+    }
+    const directory = "world.json.5.abc-def.6.tmp";
+    await mkdir(join(folder, directory));
+    const old = new Date(now - 3_600_000);
+    await utimes(join(folder, directory), old, old);
+
+    assert.deepEqual(await sweepTemporaries(folder, now), [...stale].sort());
+    assert.deepEqual((await readdir(folder)).sort(), [...others, fresh, directory].sort());
+    assert.deepEqual(await sweepTemporaries(join(dataDir, "missing"), now), []);
+});
+
+test("at its first start it removes stale temporary files of its own", async () => {
+    const folder = join(dataDir, "dune");
+    await mkdir(folder);
+    const stale = "world.json.1.abc-def.2.tmp";
+    const fresh = "history.json.1.abc-def.3.tmp";
+    for (const [name, time] of [
+        [stale, Date.UTC(2000, 0, 1)],
+        [fresh, Date.UTC(2100, 0, 1)],
+    ] as const) {
+        const path = join(folder, name);
+        await writeFile(path, "temporary");
+        await utimes(path, new Date(time), new Date(time));
+    }
+    const town = await harness();
+    await until(async () => !(await readdir(folder)).includes(stale));
+    assert.ok(!(await readdir(folder)).includes(stale));
+    assert.ok((await readdir(folder)).includes(fresh));
     await town.dispose();
 });
 

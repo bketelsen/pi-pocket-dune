@@ -39,7 +39,10 @@ The same as Agent Civilization, whose server half this is:
   `world.json` keeps its title, folder, model and persona name from the `meta` route. `world.json` also keeps the ids
   of the confirmed sessions, so they stay confirmed after a restart, and the keys of the most recent hook calls (ids
   and counts, no text), so a hook that runs again after a restart counts nothing twice. **Glossary → Forget all
-  history** clears it all. After you uninstall it, delete the `dune` folder in the data folder too.
+  history** clears it all. Each save writes a temporary file beside its file (`world.json.<pid>.<boot>.<n>.tmp`,
+  `history.json.…`) and renames it; a save that fails removes it. At its first start in a process, it removes such
+  files of its own in `<data folder>/dune/` that are older than 10 minutes, and no other file. After you uninstall it,
+  delete the `dune` folder in the data folder too.
 - **Sends** nothing over the network: only the town, to the owner's open Pi Pocket tabs (`web.send`). In the browser
   it keeps a few view choices in `localStorage`, under `x.dune.*`.
 - **Changes** nothing: each hook only records, catches its own errors, returns `undefined`, and never waits.
