@@ -27,7 +27,9 @@ the demo are new.
 ## Operational notes
 
 - The module keeps its files in `<data folder>/dune/` (`world.json`, `history.json`); after an uninstall, delete that
-  folder too.
+  folder too. A save writes a `*.tmp` file and renames it; a failed save (a full disk) removes it, and the first start
+  in a process removes those of its own older than 10 minutes
+  ([spec](../specs/what-it-reads-keeps-and-sends.md#interface)).
 - It reads shapes that are internal to Pi Pocket and the team extension; if one changes, the desert fails soft
   ([spec, "What can change under it"](../specs/what-it-reads-keeps-and-sends.md#what-can-change-under-it)).
 - `npm run preview` serves `dev/preview.html` on `127.0.0.1:8765`: the page on its demo, with no server.
