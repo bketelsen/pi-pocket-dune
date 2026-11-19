@@ -76,6 +76,9 @@ never edit them by hand (`make verify` checks their hashes). `scripts/check-temp
 - An install is a copy: `dune.ts` and `dune/` go into `~/.pi-pocket/extensions/` (README "Install"); `test/`, `dev/`,
   `docs/`, `package.json` and `_pocket.d.ts` do not. Brian installs it and turns it on in Menu → Extensions; agents
   never install, enable or restart.
+- Row B9 of core's repository baseline (a documentation site) does not apply: Arrakis is a drop-in module that
+  installs by copying files, and `README.md` with `docs/` is its documentation ([docs/org-adrs.md](docs/org-adrs.md)).
+  Do not add a site or a frostyard.org guide.
 - Internal dependency: Pi Pocket (bketelsen/pi-pocket, upstream TannerMidd/pi-pocket). CI clones the fork at tag
   `v0.28.1-bk.1`, the server's release, and checks the tag's commit (`.github/workflows/ci.yml`): move the tag, the
   commit and `_pocket.d.ts` together when the server moves to a new Pi Pocket release. README names the
